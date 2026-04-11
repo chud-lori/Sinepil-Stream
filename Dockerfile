@@ -9,8 +9,8 @@ RUN npm install --omit=dev
 # Copy source
 COPY . .
 
-# Create logs dir
-RUN mkdir -p logs
+# Create persistent dirs (data is mounted as a volume at runtime)
+RUN mkdir -p logs data
 
 EXPOSE 3500
 

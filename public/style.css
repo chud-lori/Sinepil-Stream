@@ -232,10 +232,11 @@ nav {
   display: flex;
   gap: 4px;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.2s;
 }
 
-.card:hover .card-actions { opacity: 1; }
+.card:hover .card-actions { opacity: 1; pointer-events: auto; }
 
 .card-btn {
   width: 28px;
@@ -523,8 +524,20 @@ nav {
 @media (max-width: 600px) {
   nav { padding: 10px 14px; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); padding: 0 14px 24px; gap: 12px; }
-  .modal-info { flex-direction: column; }
-  .modal-poster { width: 100%; max-width: 200px; }
   .section-header { padding: 14px 14px 8px; }
   #browse-bar { padding: 12px 14px; }
+  .card-actions { opacity: 1; pointer-events: auto; }
+
+  /* Modal — full-screen on mobile */
+  .modal-overlay { padding: 0; align-items: flex-start; }
+  .modal { border-radius: 0; min-height: 100svh; min-height: 100vh; }
+  .modal-close { top: 8px; right: 8px; }
+  .player-tabs { padding: 8px 10px; gap: 3px; }
+  .ptab { padding: 5px 10px; font-size: 11px; }
+  .modal-info { flex-direction: column; padding: 14px; gap: 14px; }
+  .modal-poster { width: 80px; min-width: 80px; }
+  .modal-info .modal-poster { display: none; }
+  .modal-title { font-size: 17px; }
+  .modal-meta { gap: 6px; }
+  .modal-footer { padding: 10px 14px 20px; }
 }

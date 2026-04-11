@@ -9,4 +9,5 @@ services:
       - NODE_ENV=production
       - PORT=3500
     volumes:
+      - ./data:/app/data
       - ./logs:/app/logs

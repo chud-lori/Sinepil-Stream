@@ -1,5 +1,8 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
+const axios    = require('axios');
+const cheerio  = require('cheerio');
+const Database = require('better-sqlite3');
+const path     = require('path');
+const fs       = require('fs');
 
 const BASE = 'http://tv10.lk21official.cc';
 
@@ -18,6 +21,84 @@ const PLAYER_HEADERS = {
 // Domains whose CSP frame-ancestors block embedding from localhost.
 // For these we route through /api/proxy. Everything else is loaded directly.
 const PROXY_DOMAINS = /cloud\.hownetwork\.xyz/i;
+
+// Slug / itemtype patterns that reliably indicate a TV series rather than a movie.
+const SERIES_SLUG_RE  = /\b(season|episode|eps|ep-?\d+|s\d{1,2}e\d{1,2})\b/i;
+const SERIES_TYPE_RE  = /tvseries|tv_show|tvshow/i;
+// Hostname of the series site lk21 redirects to
+const SERIES_HOST_RE  = /nontondrama|drakor|myasian|dramaqu/i;
+
+/* ---- SQLite movie index ---- */
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const db = new Database(path.join(DATA_DIR, 'movies.db'));
+db.pragma('journal_mode = WAL');  // better concurrent read performance
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS movies (
+    slug       TEXT PRIMARY KEY,
+    title      TEXT NOT NULL,
+    poster     TEXT DEFAULT '',
+    rating     TEXT DEFAULT '',
+    year       TEXT DEFAULT '',
+    genre      TEXT DEFAULT '',
+    indexed_at INTEGER DEFAULT (strftime('%s','now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_movies_title ON movies(title COLLATE NOCASE);
+  CREATE INDEX IF NOT EXISTS idx_movies_year  ON movies(year);
+`);
+
+const _upsert = db.prepare(`
+  INSERT INTO movies (slug, title, poster, rating, year, genre, indexed_at)
+  VALUES (@slug, @title, @poster, @rating, @year, @genre, strftime('%s','now'))
+  ON CONFLICT(slug) DO UPDATE SET
+    title      = excluded.title,
+    poster     = excluded.poster,
+    rating     = excluded.rating,
+    year       = excluded.year,
+    genre      = excluded.genre,
+    indexed_at = excluded.indexed_at
+`);
+
+const _delete     = db.prepare('DELETE FROM movies WHERE slug = ?');
+const _searchLike = db.prepare(`
+  SELECT * FROM movies
+  WHERE title LIKE ? OR replace(slug,'-',' ') LIKE ?
+  ORDER BY CAST(year AS INTEGER) DESC
+  LIMIT 60
+`);
+const _all = db.prepare('SELECT * FROM movies ORDER BY indexed_at DESC');
+
+// Remove movies whose indexed_at hasn't been refreshed in STALE_DAYS.
+// A movie stops being refreshed when it no longer appears in any browse/search
+// result — i.e. it was removed from the source site.
+const STALE_DAYS = 60;
+const _cleanStale = db.prepare(
+  `DELETE FROM movies WHERE indexed_at < strftime('%s','now') - @ttl`
+);
+function runStaleCleanup() {
+  const { changes } = _cleanStale.run({ ttl: STALE_DAYS * 86400 });
+  if (changes > 0) console.log(`[cleanup] Removed ${changes} stale movies (not seen in ${STALE_DAYS} days)`);
+}
+// Run once at startup, then every 24 h
+runStaleCleanup();
+setInterval(runStaleCleanup, 24 * 60 * 60 * 1000).unref();
+
+// Batch upsert wrapped in a transaction for speed
+const indexMovies = db.transaction((movies) => {
+  for (const m of movies) {
+    if (!m.slug || !m.title) continue;
+    _upsert.run({
+      slug:   m.slug,
+      title:  m.title,
+      poster: m.poster  || '',
+      rating: m.rating  || '',
+      year:   m.year    || '',
+      genre:  m.genre   || '',
+    });
+  }
+});
 
 async function get(url) {
   const res = await axios.get(url, {
@@ -42,18 +123,29 @@ function parseJsonLd($) {
   return result;
 }
 
-// Extract movie listing cards from article elements
+// Extract movie listing cards from article elements (series are excluded)
 function extractCards($) {
   const movies = [];
 
   $('article').each((_, el) => {
     const $el = $(el);
 
+    // Skip articles whose schema itemtype marks them as a TV series
+    const itemtype = ($el.attr('itemtype') || '').toLowerCase();
+    if (SERIES_TYPE_RE.test(itemtype)) return;
+
+    // Skip articles with a class that hints at series/drama
+    const cls = ($el.attr('class') || '').toLowerCase();
+    if (/\bseries\b|\btvshow\b|\bdrama\b/.test(cls)) return;
+
     const linkEl = $el.find('a[itemprop="url"]').first();
     const href = linkEl.attr('href') || '';
     if (!href) return;
     const slug = href.replace(/^\//, '').replace(/\/$/, '');
     if (!slug) return;
+
+    // Skip slugs that look like individual episodes or seasons
+    if (SERIES_SLUG_RE.test(slug)) return;
 
     const imgEl = $el.find('img[itemprop="image"], img').first();
     let title = imgEl.attr('alt') || imgEl.attr('title') || '';
@@ -104,8 +196,43 @@ async function resolvePlayer(playerframeUrl) {
 
 async function getMovie(slug) {
   const url = `${BASE}/${slug}/`;
-  const $ = await get(url);
+
+  // Fetch directly (not via helper) so we can inspect the final URL after redirects
+  let res;
+  try {
+    res = await axios.get(url, {
+      headers: HEADERS,
+      timeout: 20000,
+      maxRedirects: 5,
+    });
+  } catch (e) {
+    if (e.response?.status === 404) {
+      // Movie was removed from source — purge from DB immediately
+      _delete.run(slug);
+      const err = new Error('Movie not found on source site');
+      err.status = 404;
+      throw err;
+    }
+    throw e;
+  }
+
+  // If the page redirected to a different host it's a TV series page (e.g. nontondrama.my)
+  const finalUrl  = res.request?.res?.responseUrl || url;
+  const finalHost = (() => { try { return new URL(finalUrl).hostname; } catch { return ''; } })();
+  const baseHost  = (() => { try { return new URL(BASE).hostname;     } catch { return ''; } })();
+  if ((finalHost && baseHost && finalHost !== baseHost) || SERIES_HOST_RE.test(finalHost)) {
+    _delete.run(slug);
+    return { isSeries: true, slug };
+  }
+
+  const $ = cheerio.load(res.data);
   const ld = parseJsonLd($);
+
+  // JSON-LD confirms it's a TV series
+  if (ld['@type'] === 'TVSeries') {
+    _delete.run(slug);
+    return { isSeries: true, slug, title: ld.name || slug };
+  }
 
   // Title
   let title = ld.name ||
@@ -162,18 +289,18 @@ async function getMovie(slug) {
 
   const players = rawPlayers.map((p, i) => {
     const innerUrl = resolved[i].status === 'fulfilled' ? resolved[i].value : null;
-    let finalUrl;
+    let playerUrl;
 
     if (!innerUrl) {
       // Couldn't resolve — proxy the wrapper directly
-      finalUrl = `/api/proxy?url=${encodeURIComponent(p.src)}`;
-      return { ...p, finalUrl, proxied: true };
+      playerUrl = `/api/proxy?url=${encodeURIComponent(p.src)}`;
+      return { ...p, finalUrl: playerUrl, proxied: true };
     }
 
     if (PROXY_DOMAINS.test(innerUrl)) {
       // Domain needs proxy (has frame-ancestors CSP)
-      finalUrl = `/api/proxy?url=${encodeURIComponent(innerUrl)}`;
-      return { ...p, finalUrl, proxied: true, innerUrl };
+      playerUrl = `/api/proxy?url=${encodeURIComponent(innerUrl)}`;
+      return { ...p, finalUrl: playerUrl, proxied: true, innerUrl };
     }
 
     // All good — embed directly
@@ -186,115 +313,51 @@ async function getMovie(slug) {
   };
 }
 
-// ---- In-memory movie index ----
-// Grows as pages are browsed. Persists for the server lifetime.
-const movieIndex = new Map(); // slug → movie object
-
-function indexMovies(movies) {
-  for (const m of movies) {
-    if (m.slug) movieIndex.set(m.slug, m);
-  }
-}
-
-// Seed index in background when server starts
+// Lightweight seed: only homepage + 4 recent years (page 1).
+// Full genre/year coverage is loaded lazily as users browse.
 async function seedIndex() {
   const thisYear = new Date().getFullYear();
-  const genres = [
-    'action', 'drama', 'horror', 'comedy', 'thriller',
-    'romance', 'animation', 'science-fiction', 'crime', 'adventure',
-    'mystery', 'fantasy',
-  ];
-  const years = Array.from({ length: 12 }, (_, i) => thisYear - i); // last 12 years
-
-  // Pages to seed: homepage + all genres + recent years (page 1+2 each)
   const seedPages = [
     '',
-    ...genres.map(g => `genre/${g}`),
-    ...years.flatMap(y => [`year/${y}`, `year/${y}/page/2`]),
+    `year/${thisYear}`,
+    `year/${thisYear - 1}`,
+    `year/${thisYear - 2}`,
+    `year/${thisYear - 3}`,
   ];
-
   for (const p of seedPages) {
     try {
       const url = p ? `${BASE}/${p}/` : BASE;
       const $   = await get(url);
       indexMovies(extractCards($));
-      await new Promise(r => setTimeout(r, 200)); // gentle pacing
+      await new Promise(r => setTimeout(r, 300));
     } catch {}
   }
-  console.log(`[index] Seed complete: ${movieIndex.size} movies indexed`);
+  const count = db.prepare('SELECT COUNT(*) AS n FROM movies').get().n;
+  console.log(`[index] Seed complete: ${count} movies in DB`);
 }
 // Kick off background seeding (non-blocking)
 setTimeout(seedIndex, 2000);
 
 async function search(query) {
-  const q = query.toLowerCase().trim();
+  const q = query.trim();
+  if (!q) return [];
 
-  // Extract year hint from query (e.g. "batman 2012" → year=2012)
-  const yearMatch = q.match(/\b(19|20)\d{2}\b/);
-  const yearHint  = yearMatch ? yearMatch[0] : null;
-  const qNoYear   = q.replace(/\b(19|20)\d{2}\b/, '').trim();
-
-  // Pages to fetch on top of the index:
-  // 1. Genre pages matching keyword hints
-  const genreMap = {
-    action: /action|fight|war|battle|superhero/i,
-    horror: /horror|scary|ghost|zombie/i,
-    comedy: /comedy|funny|humor/i,
-    drama:  /drama|romance|love|family/i,
-    animation: /animat|cartoon/i,
-    thriller: /thriller|suspense|spy/i,
-    'science-fiction': /sci.fi|space|robot|future/i,
-    crime: /crime|murder|detective|heist/i,
-  };
-
-  const liveFetches = [];
-
-  for (const [genre, re] of Object.entries(genreMap)) {
-    if (re.test(qNoYear || q)) liveFetches.push(`genre/${genre}`);
+  // Use the source site's own search endpoint as primary source.
+  // This gives accurate, ranked, up-to-date results without relying on
+  // what happens to be in the local index.
+  try {
+    const searchUrl = `${BASE}/?s=${encodeURIComponent(q)}`;
+    const $ = await get(searchUrl);
+    const cards = extractCards($); // series already filtered out
+    indexMovies(cards);            // cache side-effect
+    if (cards.length > 0) return cards;
+  } catch (e) {
+    console.warn('[search] site search failed, falling back to index:', e.message);
   }
 
-  // 2. Year-specific pages (up to 3 pages deep) if year hinted
-  if (yearHint) {
-    liveFetches.push(`year/${yearHint}`, `year/${yearHint}/page/2`, `year/${yearHint}/page/3`);
-  } else {
-    // No year hint: supplement with a few years the seed might not have covered yet
-    const thisYear = new Date().getFullYear();
-    for (let y = thisYear; y >= thisYear - 3; y--) {
-      liveFetches.push(`year/${y}`, `year/${y}/page/2`, `year/${y}/page/3`);
-    }
-  }
-
-  // Fetch live pages in parallel and add to index
-  await Promise.allSettled(
-    liveFetches.map(async (p) => {
-      try {
-        const url = `${BASE}/${p}/`;
-        const $   = await get(url);
-        indexMovies(extractCards($));
-      } catch {}
-    })
-  );
-
-  // Filter the full index
-  const all = [...movieIndex.values()];
-  const slugQ = (qNoYear || q).replace(/\s+/g, '-');
-
-  return all.filter(m => {
-    const t = m.title.toLowerCase();
-    const s = m.slug.replace(/-\d{4}$/, ''); // strip year from slug
-    return (
-      t.includes(qNoYear || q) ||
-      t.includes(q) ||
-      m.genre?.toLowerCase().includes(qNoYear || q) ||
-      s.replace(/-/g, ' ').includes(qNoYear || q) ||
-      s.includes(slugQ)
-    );
-  }).sort((a, b) => {
-    // Exact title match first
-    const aq = a.title.toLowerCase().startsWith(qNoYear || q) ? 0 : 1;
-    const bq = b.title.toLowerCase().startsWith(qNoYear || q) ? 0 : 1;
-    return aq - bq;
-  });
+  // Fallback: query the SQLite cache (useful if the site is unreachable)
+  const like = `%${q.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
+  return _searchLike.all(like, like);
 }
 
 async function browse(path = '') {
