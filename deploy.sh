@@ -11,8 +11,8 @@ git pull origin main
 echo ">>> Installing dependencies..."
 npm install --omit=dev
 
-echo ">>> Creating logs dir..."
-mkdir -p logs
+echo ">>> Creating required dirs..."
+mkdir -p logs data
 
 echo ">>> Restarting app with PM2..."
 pm2 restart sinepilstream || pm2 start ecosystem.config.js

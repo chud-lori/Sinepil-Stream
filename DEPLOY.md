@@ -68,6 +68,28 @@ git pull origin main
 docker compose up -d --build
 ```
 
+> **Note on `better-sqlite3`:** this is a native C++ addon. The Dockerfile installs
+> `python3 make g++` during the build step so it compiles correctly inside the Alpine
+> container. You don't need anything extra on the host — Docker handles it.
+
+---
+
+## Persistent Data (SQLite)
+
+The scraper caches movie data in `./data/movies.db` on the host (mounted into the
+container via `docker-compose.yml`). This means:
+
+- The DB **survives container rebuilds and restarts** — you won't lose indexed movies
+  when you redeploy.
+- On first deploy the `data/` directory is created automatically.
+- Do **not** delete `./data/` unless you want to start fresh.
+
+To inspect the DB on the server:
+```bash
+sqlite3 data/movies.db "SELECT COUNT(*) FROM movies;"
+sqlite3 data/movies.db "SELECT title, year, datetime(indexed_at,'unixepoch') FROM movies ORDER BY indexed_at DESC LIMIT 10;"
+```
+
 ---
 
 ## Deploy Key Setup
