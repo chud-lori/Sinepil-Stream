@@ -1,5 +1,5 @@
 {
-  "name": "lkscrap",
+  "name": "sinepilstream",
   "version": "1.0.0",
   "description": "",
   "main": "server.js",
@@ -13,8 +13,7 @@
   "type": "commonjs",
   "dependencies": {
     "axios": "^1.15.0",
-    "better-sqlite3": "^12.8.0",
-    "cheerio": "^1.2.0",
+"cheerio": "^1.2.0",
     "express": "^5.2.1"
   }
 }

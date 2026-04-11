@@ -116,7 +116,7 @@ app.options('/api/p2p-api', (req, res) => {
 
 /* ======================================================
    Player resolver
-   - Fetches playeriframe.sbs wrapper (lk21 Referer)
+   - Fetches playeriframe.sbs wrapper (site Referer)
    - Extracts inner player URL, follows URL-shortener redirects
    - Returns direct URL if no CSP, else routes through /api/proxy
    ====================================================== */
