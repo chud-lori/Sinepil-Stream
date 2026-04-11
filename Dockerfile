@@ -1,16 +1,12 @@
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
-# Build tools required to compile native addons (better-sqlite3 uses node-gyp)
-RUN apk add --no-cache python3 make g++
-
 # Install dependencies first (layer cache)
+# node:20-slim is Debian-based — better-sqlite3 uses its pre-built Linux x64 binary,
+# no C++ compilation needed.
 COPY package*.json ./
 RUN npm install --omit=dev
-
-# Remove build tools after compilation to keep the image lean
-RUN apk del python3 make g++
 
 # Copy source
 COPY . .
