@@ -9,5 +9,8 @@ services:
       - NODE_ENV=production
       - PORT=3500
     volumes:
-      - ./data:/app/data
+      - sinepilstream_data:/app/data   # named volume — lives in /var/lib/docker/volumes/, NOT in the project dir
       - ./logs:/app/logs
+
+volumes:
+  sinepilstream_data:

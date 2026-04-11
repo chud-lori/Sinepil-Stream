@@ -76,18 +76,33 @@ docker compose up -d --build
 
 ## Persistent Data (SQLite)
 
-The scraper caches movie data in `./data/movies.db` on the host (mounted into the
-container via `docker-compose.yml`). This means:
+Movie data is stored in a **Docker named volume** (`sinepilstream_data`), managed by
+Docker at `/var/lib/docker/volumes/sinepilstream_data/`. It is completely separate from
+the project directory, so it survives:
 
-- The DB **survives container rebuilds and restarts** — you won't lose indexed movies
-  when you redeploy.
-- On first deploy the `data/` directory is created automatically.
-- Do **not** delete `./data/` unless you want to start fresh.
+- `git pull` / re-clone
+- `docker compose up -d --build` (rebuild)
+- Moving or deleting the project folder
+
+The only way to lose it is explicitly running `docker volume rm sinepilstream_data`
+or `docker compose down -v` (the `-v` flag removes volumes — never use it in prod).
 
 To inspect the DB on the server:
 ```bash
-sqlite3 data/movies.db "SELECT COUNT(*) FROM movies;"
-sqlite3 data/movies.db "SELECT title, year, datetime(indexed_at,'unixepoch') FROM movies ORDER BY indexed_at DESC LIMIT 10;"
+docker exec sinepilstream node -e "
+const db = require('better-sqlite3')('/app/data/movies.db');
+console.log('total:', db.prepare('SELECT COUNT(*) AS n FROM movies').get().n);
+"
+```
+
+To back up the DB:
+```bash
+docker cp sinepilstream:/app/data/movies.db ./movies.db.bak
+```
+
+To restore a backup:
+```bash
+docker cp ./movies.db.bak sinepilstream:/app/data/movies.db
 ```
 
 ---
