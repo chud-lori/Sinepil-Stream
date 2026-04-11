@@ -208,17 +208,13 @@ async function openMovie(slug) {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
-    if (data.isSeries) {
-      document.getElementById('modal-overlay').classList.remove('open');
-      toast('This title is a TV series — not supported yet');
-      return;
-    }
-
     currentMovie   = data;
+    // Use the player order from the website (already resolved during scraping)
     currentPlayers = data.players || [];
 
     renderModal(data);
 
+    // Auto-load the first (most reliable) player
     if (currentPlayers.length > 0) loadPlayer(0);
 
     // Save to localStorage history
@@ -298,7 +294,6 @@ function loadPlayer(index) {
     referrerpolicy="no-referrer"
   ></iframe>`;
 }
-
 
 function playerErrorHTML(msg, currentIndex) {
   const nextIndex = currentIndex + 1;
