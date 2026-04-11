@@ -1,0 +1,12 @@
+services:
+  sinepilstream:
+    build: .
+    container_name: sinepilstream
+    restart: unless-stopped
+    ports:
+      - "3500:3500"
+    environment:
+      - NODE_ENV=production
+      - PORT=3500
+    volumes:
+      - ./logs:/app/logs
