@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SinepilStream</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo" onclick="showTab('browse')">&#9654; SinepilStream</div>
+
+  <div class="search-wrap">
+    <button onclick="doSearch()" title="Search">
+      <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="8.5" cy="8.5" r="5.5"/><line x1="13" y1="13" x2="18" y2="18"/>
+      </svg>
+    </button>
+    <input id="search-input" type="text" placeholder="Search movies…"
+      onkeydown="if(event.key==='Enter') doSearch()" />
+  </div>
+
+  <div class="nav-tabs">
+    <button class="nav-tab active" id="tab-browse"   onclick="showTab('browse')">Browse</button>
+    <button class="nav-tab"        id="tab-search"   onclick="showTab('search')">Search</button>
+    <button class="nav-tab"        id="tab-history"  onclick="showTab('history')">History</button>
+    <button class="nav-tab"        id="tab-wishlist" onclick="showTab('wishlist')">Wishlist</button>
+  </div>
+</nav>
+
+<!-- BROWSE FILTERS -->
+<div id="browse-bar">
+  <select class="filter-select" id="filter-genre" onchange="applyFilter()">
+    <option value="">All Genres</option>
+    <option value="genre/action">Action</option>
+    <option value="genre/adventure">Adventure</option>
+    <option value="genre/animation">Animation</option>
+    <option value="genre/comedy">Comedy</option>
+    <option value="genre/crime">Crime</option>
+    <option value="genre/documentary">Documentary</option>
+    <option value="genre/drama">Drama</option>
+    <option value="genre/fantasy">Fantasy</option>
+    <option value="genre/history">History</option>
+    <option value="genre/horror">Horror</option>
+    <option value="genre/music">Music</option>
+    <option value="genre/mystery">Mystery</option>
+    <option value="genre/romance">Romance</option>
+    <option value="genre/science-fiction">Sci-Fi</option>
+    <option value="genre/thriller">Thriller</option>
+    <option value="genre/war">War</option>
+  </select>
+
+  <select class="filter-select" id="filter-country" onchange="applyFilter()">
+    <option value="">All Countries</option>
+    <option value="country/usa">USA</option>
+    <option value="country/korea">Korea</option>
+    <option value="country/japan">Japan</option>
+    <option value="country/uk">UK</option>
+    <option value="country/france">France</option>
+    <option value="country/india">India</option>
+    <option value="country/china">China</option>
+    <option value="country/thailand">Thailand</option>
+    <option value="country/indonesia">Indonesia</option>
+  </select>
+
+  <select class="filter-select" id="filter-year" onchange="applyFilter()">
+    <option value="">All Years</option>
+    <option value="year/2026">2026</option>
+    <option value="year/2025">2025</option>
+    <option value="year/2024">2024</option>
+    <option value="year/2023">2023</option>
+    <option value="year/2022">2022</option>
+    <option value="year/2021">2021</option>
+    <option value="year/2020">2020</option>
+    <option value="year/2019">2019</option>
+    <option value="year/2018">2018</option>
+    <option value="year/2017">2017</option>
+    <option value="year/2015">2015</option>
+    <option value="year/2010">2010</option>
+  </select>
+</div>
+
+<!-- SECTIONS -->
+<div id="sec-browse" class="section active">
+  <div class="section-header">
+    <span class="section-title" id="browse-title">Latest Movies</span>
+  </div>
+  <div id="browse-grid" class="grid grid-lg"></div>
+</div>
+
+<div id="sec-search" class="section">
+  <div class="section-header">
+    <span class="section-title">Results</span>
+    <span class="badge" id="search-count"></span>
+  </div>
+  <div id="search-grid" class="grid grid-lg"></div>
+</div>
+
+<div id="sec-history" class="section">
+  <div class="section-header">
+    <span class="section-title">Watch History</span>
+    <button class="btn btn-outline" style="font-size:12px;padding:5px 12px;" onclick="clearHistory()">Clear All</button>
+  </div>
+  <div id="history-grid" class="grid grid-lg"></div>
+</div>
+
+<div id="sec-wishlist" class="section">
+  <div class="section-header">
+    <span class="section-title">Wishlist</span>
+    <span class="badge" id="wishlist-count"></span>
+  </div>
+  <div id="wishlist-grid" class="grid grid-lg"></div>
+</div>
+
+<!-- MOVIE MODAL -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" id="modal">
+    <button class="modal-close" onclick="closeModal()">&#x2715;</button>
+
+    <!-- Player -->
+    <div class="player-wrap" id="player-wrap">
+      <div class="player-placeholder" id="player-placeholder">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/>
+          <polygon points="10,8 16,12 10,16"/>
+        </svg>
+        <span>Select a player below to start watching</span>
+      </div>
+    </div>
+
+    <!-- Player selection tabs -->
+    <div class="player-tabs" id="player-tabs"></div>
+
+    <!-- Info -->
+    <div class="modal-info">
+      <div class="modal-poster">
+        <img id="modal-poster" src="" alt="" loading="lazy" />
+      </div>
+      <div class="modal-details">
+        <h2 class="modal-title" id="modal-title"></h2>
+        <div class="modal-meta" id="modal-meta"></div>
+        <p class="modal-desc" id="modal-desc"></p>
+        <button class="read-more" id="read-more-btn" onclick="toggleDesc()">Read more</button>
+        <div class="modal-cast" id="modal-cast"></div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-wishlist" id="btn-wishlist" onclick="toggleWishlist()">
+        &#9825; Wishlist
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
