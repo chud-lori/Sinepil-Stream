@@ -592,7 +592,20 @@ nav {
 
 /* ---- RESPONSIVE ---- */
 @media (max-width: 600px) {
-  nav { padding: 10px 14px; }
+  /* Nav: logo + tabs on row 1, search full-width on row 2 */
+  nav {
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .nav-logo { flex: 1; }
+  .nav-tabs  { margin-left: 0; }
+  .search-wrap {
+    order: 3;        /* push below logo + tabs */
+    flex: 1 1 100%;  /* full width second row */
+    max-width: 100%;
+  }
+
   .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); padding: 0 14px 24px; gap: 12px; }
   .section-header { padding: 14px 14px 8px; }
   #browse-bar { padding: 12px 14px; }
