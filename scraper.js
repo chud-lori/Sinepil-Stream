@@ -102,9 +102,58 @@ async function resolvePlayer(playerframeUrl) {
 
 // ---- Public API ----
 
+// Detect series redirect pages (e.g. "Anda akan dialihkan ke Lk21 Nontondrama")
+// Returns the redirect URL string, or null if it's a normal movie page.
+function detectSeriesRedirect($) {
+  // 1. meta http-equiv="refresh"
+  const metaRefresh = $('meta[http-equiv="refresh"]').attr('content') || '';
+  const metaMatch   = metaRefresh.match(/url=(.+)/i);
+  if (metaMatch) return metaMatch[1].trim();
+
+  // 2. JS window.location / location.href assignment
+  let jsRedirect = null;
+  $('script').each((_, el) => {
+    const code = $(el).html() || '';
+    const m = code.match(/(?:window\.location|location\.href)\s*=\s*['"]([^'"]+)['"]/);
+    if (m) { jsRedirect = m[1]; return false; }
+    // also catch: setTimeout(function(){ location.href = '...' }, N)
+    const m2 = code.match(/location\.replace\(['"]([^'"]+)['"]\)/);
+    if (m2) { jsRedirect = m2[1]; return false; }
+  });
+  if (jsRedirect) return jsRedirect;
+
+  // 3. Text hint — page says "dialihkan" (redirected) but no explicit URL found
+  const bodyText = $('body').text();
+  if (/dialihkan/i.test(bodyText)) return 'unknown';
+
+  return null;
+}
+
 async function getMovie(slug) {
   const url = `${BASE}/${slug}/`;
   const $ = await get(url);
+
+  // Detect series/drama redirect before anything else
+  const redirectUrl = detectSeriesRedirect($);
+  if (redirectUrl) {
+    const ld = parseJsonLd($);
+    let title = ld.name ||
+      $('meta[property="og:title"]').attr('content') ||
+      $('h1').first().text().trim() || slug;
+    title = title
+      .replace(/^Lk21\s+Nonton\s+/i, '')
+      .replace(/\s+Sub Indo.*$/i, '')
+      .replace(/\s*\|\s*Streaming.*$/i, '')
+      .replace(/\s*\(\d{4}\)\s*$/, '')
+      .trim();
+    const poster = ld.image?.url || ld.image || $('meta[property="og:image"]').attr('content') || '';
+    const description = ld.description || $('meta[property="og:description"]').attr('content') || '';
+    const genre = Array.isArray(ld.genre) ? ld.genre.join(', ') : (ld.genre || '');
+    const year  = String(ld.datePublished || '').slice(0, 4) || '';
+    seriesSet.add(slug);
+    return { isSeries: true };
+  }
+
   const ld = parseJsonLd($);
 
   // Title
@@ -189,6 +238,7 @@ async function getMovie(slug) {
 // ---- In-memory movie index ----
 // Grows as pages are browsed. Persists for the server lifetime.
 const movieIndex = new Map(); // slug → movie object
+const seriesSet  = new Set(); // slugs confirmed to be series — excluded from results
 
 function indexMovies(movies) {
   for (const m of movies) {
@@ -280,6 +330,7 @@ async function search(query) {
   const slugQ = (qNoYear || q).replace(/\s+/g, '-');
 
   return all.filter(m => {
+    if (seriesSet.has(m.slug)) return false;
     const t = m.title.toLowerCase();
     const s = m.slug.replace(/-\d{4}$/, ''); // strip year from slug
     return (
@@ -302,7 +353,7 @@ async function browse(path = '') {
   const $ = await get(url);
   const movies = extractCards($);
   indexMovies(movies); // add to search index as a side-effect
-  return movies;
+  return movies.filter(m => !seriesSet.has(m.slug));
 }
 
 module.exports = { getMovie, search, browse };
