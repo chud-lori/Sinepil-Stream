@@ -63,6 +63,14 @@ app.get(/^\/api\/movie\/(.+)$/, async (req, res) => {
   }
 });
 
+// Resolve a source web URL to a slug so the frontend can open it directly.
+// e.g. GET /api/slug-from-url?url=https://tv10.lk21official.cc/the-hunt-2012/
+app.get('/api/slug-from-url', (req, res) => {
+  const slug = scraper.slugFromSourceUrl(req.query.url || '');
+  if (!slug) return res.status(400).json({ error: 'Not a valid lk21 URL' });
+  res.json({ slug });
+});
+
 app.get('/api/search', async (req, res) => {
   try {
     const q = req.query.q || '';

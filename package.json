@@ -7,13 +7,25 @@
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
-  "keywords": ["movie streaming", "watch movies online", "free movies", "tv shows", "sinepilstream", "self-hosted streaming", "cinema"],
+  "keywords": [
+    "movie streaming",
+    "watch movies online",
+    "free movies",
+    "tv shows",
+    "sinepilstream",
+    "self-hosted streaming",
+    "cinema"
+  ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
     "axios": "^1.15.0",
-"cheerio": "^1.2.0",
+    "better-sqlite3": "^12.8.0",
+    "cheerio": "^1.2.0",
     "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^0.1.97"
   }
 }

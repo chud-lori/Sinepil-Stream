@@ -74,11 +74,26 @@ function applyFilter() {
 }
 
 /* ---- Search ---- */
-function doSearch() {
+async function doSearch() {
   const q = document.getElementById('search-input').value.trim();
   if (!q) return;
   showTab('search');
   loadGrid('search-grid', `/api/search?q=${encodeURIComponent(q)}`, 'search-count');
+}
+
+/* ---- Watch by URL ---- */
+async function watchByUrl() {
+  const input = document.getElementById('url-input');
+  const url = input.value.trim();
+  if (!url) return;
+  const res = await fetch(`/api/slug-from-url?url=${encodeURIComponent(url)}`);
+  const data = await res.json();
+  if (data.slug) {
+    input.value = '';
+    openMovie(data.slug);
+    return;
+  }
+  toast('URL not recognised — must be a link from the source site');
 }
 
 /* ---- Generic grid loader ---- */
@@ -133,6 +148,7 @@ function renderWishlist() {
 function cardHTML(m, opts = {}) {
   const poster = m.poster
     ? `<img class="card-img" src="${esc(m.poster)}" alt="${esc(m.title)}" loading="lazy"
+          onload="this.classList.add('loaded')"
           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
     : '';
   const placeholder = `<div class="card-img-placeholder" ${m.poster ? 'style="display:none"' : ''}>&#127916;</div>`;
@@ -208,9 +224,22 @@ async function openMovie(slug) {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
-    currentMovie   = data;
-    // Use the player order from the website (already resolved during scraping)
-    currentPlayers = data.players || [];
+    if (data.isSeries) {
+      document.getElementById('modal-overlay').classList.remove('open');
+      toast('This title is a TV series — not supported');
+      return;
+    }
+
+    currentMovie = data;
+    // Reorder players: CAST and HYDRAX tend to work; P2P and TURBOVIP often fail.
+    const PLAYER_PRIORITY = ['CAST', 'HYDRAX', 'TURBOVIP', 'P2P'];
+    currentPlayers = (data.players || []).slice().sort((a, b) => {
+      const ai = PLAYER_PRIORITY.indexOf(a.label?.toUpperCase());
+      const bi = PLAYER_PRIORITY.indexOf(b.label?.toUpperCase());
+      const av = ai === -1 ? PLAYER_PRIORITY.length : ai;
+      const bv = bi === -1 ? PLAYER_PRIORITY.length : bi;
+      return av - bv;
+    });
 
     renderModal(data);
 
@@ -230,10 +259,12 @@ async function openMovie(slug) {
 
 function renderModal(data) {
   const posterEl = document.getElementById('modal-poster');
-  if (data.poster) {
-    posterEl.src = data.poster;
-    posterEl.onerror = () => posterEl.parentElement.style.display = 'none';
-  }
+  // Remove 'loaded' first — CSS makes the img opacity:0 so no broken-icon flash.
+  // The shimmer animates on the parent container until the image is ready.
+  posterEl.classList.remove('loaded');
+  posterEl.onload  = () => posterEl.classList.add('loaded');
+  posterEl.onerror = () => posterEl.classList.add('loaded'); // hide shimmer even on error
+  posterEl.src = data.poster || '';
 
   document.getElementById('modal-title').textContent = data.title || 'Unknown';
 

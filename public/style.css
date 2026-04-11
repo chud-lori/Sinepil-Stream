@@ -11,6 +11,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+button, [role="button"] { cursor: pointer; }
 
 body {
   background: var(--bg);
@@ -121,6 +122,49 @@ nav {
 
 .filter-select:focus { border-color: var(--accent); }
 
+/* ---- WATCH BY URL BAR ---- */
+#url-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+#url-bar input {
+  flex: 1;
+  max-width: 560px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 7px 12px;
+  outline: none;
+}
+#url-bar input:focus { border-color: var(--accent); }
+#url-bar input::placeholder { color: var(--muted); }
+
+#url-bar button {
+  padding: 7px 16px;
+  border-radius: 6px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#url-bar button:hover { background: #c00; }
+
+#url-bar .url-bar-label {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 /* ---- SECTIONS ---- */
 .section { display: none; }
 .section.active { display: block; }
@@ -179,8 +223,15 @@ nav {
   width: 100%;
   aspect-ratio: 2/3;
   object-fit: cover;
-  background: var(--surface);
   display: block;
+  /* skeleton shimmer until image loads */
+  background: linear-gradient(90deg, var(--surface) 25%, var(--border) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+.card-img.loaded {
+  background: var(--surface);
+  animation: none;
 }
 
 .card-img-placeholder {
@@ -232,10 +283,11 @@ nav {
   display: flex;
   gap: 4px;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.2s;
 }
 
-.card:hover .card-actions { opacity: 1; }
+.card:hover .card-actions { opacity: 1; pointer-events: auto; }
 
 .card-btn {
   width: 28px;
@@ -365,6 +417,15 @@ nav {
   border-radius: 8px;
   overflow: hidden;
   align-self: flex-start;
+  /* Shimmer lives on the container so it shows while the img is transparent */
+  background: linear-gradient(90deg, var(--card) 25%, var(--border) 50%, var(--card) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+/* Stop shimmer once the image is actually loaded */
+.modal-poster:has(img.loaded) {
+  background: var(--card);
+  animation: none;
 }
 
 .modal-poster img {
@@ -372,7 +433,12 @@ nav {
   display: block;
   aspect-ratio: 2/3;
   object-fit: cover;
-  background: var(--card);
+  /* Hide img (and any broken-image icon) until fully loaded */
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.modal-poster img.loaded {
+  opacity: 1;
 }
 
 .modal-details { flex: 1; min-width: 0; }
@@ -486,6 +552,11 @@ nav {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .empty {
   text-align: center;
   padding: 60px 20px;
@@ -523,8 +594,22 @@ nav {
 @media (max-width: 600px) {
   nav { padding: 10px 14px; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); padding: 0 14px 24px; gap: 12px; }
-  .modal-info { flex-direction: column; }
-  .modal-poster { width: 100%; max-width: 200px; }
   .section-header { padding: 14px 14px 8px; }
   #browse-bar { padding: 12px 14px; }
+  #url-bar { padding: 8px 14px; }
+  #url-bar .url-bar-label { display: none; }
+  .card-actions { opacity: 1; pointer-events: auto; }
+
+  /* Modal — full-screen on mobile */
+  .modal-overlay { padding: 0; align-items: flex-start; }
+  .modal { border-radius: 0; min-height: 100svh; min-height: 100vh; }
+  .modal-close { top: 8px; right: 8px; }
+  .player-tabs { padding: 8px 10px; gap: 3px; }
+  .ptab { padding: 5px 10px; font-size: 11px; }
+  .modal-info { flex-direction: column; padding: 14px; gap: 14px; }
+  .modal-poster { width: 80px; min-width: 80px; }
+  .modal-info .modal-poster { display: none; }
+  .modal-title { font-size: 17px; }
+  .modal-meta { gap: 6px; }
+  .modal-footer { padding: 10px 14px 20px; }
 }

@@ -3,26 +3,36 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SinepilStream - Watch Movies & TV Shows</title>
-  <meta name="description" content="SinepilStream is a lightweight, self-hosted movie streaming app. Watch your favorite movies and TV shows with a clean, ad-minimal interface." />
-  <meta name="keywords" content="movie streaming, watch movies online, free movies, tv shows, sinepilstream, self-hosted streaming, cinema" />
-  
+  <title>SinepilStream — Watch Movies Without Ads</title>
+  <meta name="description" content="SinepilStream is a clean, self-hosted movie streaming app. Browse and watch movies without intrusive ads or pop-ups." />
+  <meta name="keywords" content="nonton film, nonton movie, streaming film, sinepilstream, lk21, layarkaca21, film sub indo, nonton online" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://sinepil.lori.my.id/" />
+  <meta name="theme-color" content="#0f0f13" />
+
   <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 
-  <!-- Open Graph / Facebook -->
+  <!-- Open Graph (Facebook, WhatsApp, Discord, Slack, iMessage…) -->
   <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="SinepilStream" />
   <meta property="og:url" content="https://sinepil.lori.my.id/" />
-  <meta property="og:title" content="SinepilStream - Watch Movies & TV Shows" />
-  <meta property="og:description" content="Lightweight, self-hosted movie streaming with a clean, ad-minimal interface. Watch movies and TV shows on-the-fly." />
-  <meta property="og:image" content="https://sinepil.lori.my.id/og-image.jpg" />
+  <meta property="og:title" content="SinepilStream — Watch Movies Without Ads" />
+  <meta property="og:description" content="Browse and watch movies with a clean, ad-free interface. Paste any lk21 link to watch instantly without pop-ups or redirects." />
+  <meta property="og:image" content="https://sinepil.lori.my.id/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="SinepilStream — Watch movies without ads" />
 
-  <!-- Twitter -->
-  <meta property="twitter:card" content="summary_large_image" />
-  <meta property="twitter:url" content="https://sinepil.lori.my.id/" />
-  <meta property="twitter:title" content="SinepilStream - Watch Movies & TV Shows" />
-  <meta property="twitter:description" content="Lightweight, self-hosted movie streaming with a clean, ad-minimal interface. Watch movies and TV shows on-the-fly." />
-  <meta property="twitter:image" content="https://sinepil.lori.my.id/og-image.jpg" />
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@sinepilstream" />
+  <meta name="twitter:url" content="https://sinepil.lori.my.id/" />
+  <meta name="twitter:title" content="SinepilStream — Watch Movies Without Ads" />
+  <meta name="twitter:description" content="Browse and watch movies with a clean, ad-free interface. Paste any lk21 link to watch instantly without pop-ups or redirects." />
+  <meta name="twitter:image" content="https://sinepil.lori.my.id/og-image.png" />
+  <meta name="twitter:image:alt" content="SinepilStream — Watch movies without ads" />
 
   <link rel="stylesheet" href="style.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -102,6 +112,14 @@
     <option value="year/2015">2015</option>
     <option value="year/2010">2010</option>
   </select>
+</div>
+
+<!-- WATCH BY URL -->
+<div id="url-bar">
+  <span class="url-bar-label">&#128279; Watch by URL:</span>
+  <input id="url-input" type="url" placeholder="Paste a lk21official.cc link here to watch without ads…"
+    onkeydown="if(event.key==='Enter') watchByUrl()" />
+  <button onclick="watchByUrl()">Watch</button>
 </div>
 
 <!-- SECTIONS -->

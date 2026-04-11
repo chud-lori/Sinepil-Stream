@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f0f13"/>
+      <stop offset="100%" stop-color="#1a1a2e"/>
+    </linearGradient>
+    <linearGradient id="accent-glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e50914" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#e50914" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Subtle accent glow at top -->
+  <rect width="1200" height="300" fill="url(#accent-glow)"/>
+
+  <!-- Decorative film-strip lines -->
+  <rect x="0" y="0" width="1200" height="4" fill="#e50914" opacity="0.8"/>
+  <rect x="0" y="626" width="1200" height="4" fill="#e50914" opacity="0.4"/>
+
+  <!-- Play icon circle -->
+  <circle cx="600" cy="245" r="72" fill="#e50914" opacity="0.12"/>
+  <circle cx="600" cy="245" r="58" fill="none" stroke="#e50914" stroke-width="2.5" opacity="0.6"/>
+  <polygon points="588,222 630,245 588,268" fill="#e50914" opacity="0.9"/>
+
+  <!-- App name -->
+  <text x="600" y="380" text-anchor="middle"
+        font-family="system-ui, -apple-system, sans-serif"
+        font-size="72" font-weight="800" letter-spacing="-2"
+        fill="#ffffff">Sinepil<tspan fill="#e50914">Stream</tspan></text>
+
+  <!-- Tagline -->
+  <text x="600" y="440" text-anchor="middle"
+        font-family="system-ui, -apple-system, sans-serif"
+        font-size="26" font-weight="400" letter-spacing="0.5"
+        fill="#7070a0">Watch movies. No ads. No noise.</text>
+
+  <!-- URL -->
+  <text x="600" y="560" text-anchor="middle"
+        font-family="system-ui, -apple-system, sans-serif"
+        font-size="20" font-weight="500"
+        fill="#3a3a5a">sinepil.lori.my.id</text>
+</svg>

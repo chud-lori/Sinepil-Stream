@@ -68,6 +68,43 @@ git pull origin main
 docker compose up -d --build
 ```
 
+> **Note on `better-sqlite3`:** this is a native C++ addon. The Dockerfile installs
+> `python3 make g++` during the build step so it compiles correctly inside the Alpine
+> container. You don't need anything extra on the host — Docker handles it.
+
+---
+
+## Persistent Data (SQLite)
+
+Movie data is stored in a **Docker named volume** (`sinepilstream_data`), managed by
+Docker at `/var/lib/docker/volumes/sinepilstream_data/`. It is completely separate from
+the project directory, so it survives:
+
+- `git pull` / re-clone
+- `docker compose up -d --build` (rebuild)
+- Moving or deleting the project folder
+
+The only way to lose it is explicitly running `docker volume rm sinepilstream_data`
+or `docker compose down -v` (the `-v` flag removes volumes — never use it in prod).
+
+To inspect the DB on the server:
+```bash
+docker exec sinepilstream node -e "
+const db = require('better-sqlite3')('/app/data/movies.db');
+console.log('total:', db.prepare('SELECT COUNT(*) AS n FROM movies').get().n);
+"
+```
+
+To back up the DB:
+```bash
+docker cp sinepilstream:/app/data/movies.db ./movies.db.bak
+```
+
+To restore a backup:
+```bash
+docker cp ./movies.db.bak sinepilstream:/app/data/movies.db
+```
+
 ---
 
 ## Deploy Key Setup
