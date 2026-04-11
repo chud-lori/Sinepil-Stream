@@ -28,6 +28,7 @@ const SERIES_TYPE_RE  = /tvseries|tv_show|tvshow/i;
 // Hostname of the series site lk21 redirects to
 const SERIES_HOST_RE  = /nontondrama|drakor|myasian|dramaqu/i;
 
+
 /* ---- SQLite movie index ---- */
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -130,21 +131,25 @@ function extractCards($) {
   $('article').each((_, el) => {
     const $el = $(el);
 
-    // Skip articles whose schema itemtype marks them as a TV series
-    const itemtype = ($el.attr('itemtype') || '').toLowerCase();
-    if (SERIES_TYPE_RE.test(itemtype)) return;
-
-    // Skip articles with a class that hints at series/drama
-    const cls = ($el.attr('class') || '').toLowerCase();
-    if (/\bseries\b|\btvshow\b|\bdrama\b/.test(cls)) return;
-
     const linkEl = $el.find('a[itemprop="url"]').first();
-    const href = linkEl.attr('href') || '';
+    const href      = linkEl.attr('href') || '';
+    const titleAttr = (linkEl.attr('title') || '').toLowerCase();
     if (!href) return;
+
+    // Primary: the site itself labels entries as "Nonton series …" or "Nonton movie …"
+    // in the anchor title attribute — the most reliable signal on this site.
+    if (titleAttr.includes('nonton series')) return;
+
+    // Secondary: series cards have a <span class="episode"> badge (e.g. "EPS 7")
+    if ($el.find('span.episode').length > 0) return;
+
+    // Skip cards whose link already points directly to a series host
+    if (SERIES_HOST_RE.test(href)) return;
+
     const slug = href.replace(/^\//, '').replace(/\/$/, '');
     if (!slug) return;
 
-    // Skip slugs that look like individual episodes or seasons
+    // Tertiary: slugs that explicitly contain episode/season keywords
     if (SERIES_SLUG_RE.test(slug)) return;
 
     const imgEl = $el.find('img[itemprop="image"], img').first();
@@ -216,19 +221,27 @@ async function getMovie(slug) {
     throw e;
   }
 
-  // If the page redirected to a different host it's a TV series page (e.g. nontondrama.my)
+  const $ = cheerio.load(res.data);
+
+  // 1. HTTP redirect landed on a different host (e.g. nontondrama.my)
   const finalUrl  = res.request?.res?.responseUrl || url;
   const finalHost = (() => { try { return new URL(finalUrl).hostname; } catch { return ''; } })();
   const baseHost  = (() => { try { return new URL(BASE).hostname;     } catch { return ''; } })();
-  if ((finalHost && baseHost && finalHost !== baseHost) || SERIES_HOST_RE.test(finalHost)) {
+  if (finalHost && baseHost && finalHost !== baseHost) {
     _delete.run(slug);
     return { isSeries: true, slug };
   }
 
-  const $ = cheerio.load(res.data);
+  // 2. JS countdown redirect page — identified by the unique #openNow button or
+  //    main.card wrapper. Every movie page has neither; every series redirect page has both.
+  if ($('#openNow').length > 0 || $('main.card').length > 0) {
+    _delete.run(slug);
+    return { isSeries: true, slug };
+  }
+
   const ld = parseJsonLd($);
 
-  // JSON-LD confirms it's a TV series
+  // 3. JSON-LD type is TVSeries
   if (ld['@type'] === 'TVSeries') {
     _delete.run(slug);
     return { isSeries: true, slug, title: ld.name || slug };
@@ -338,27 +351,78 @@ async function seedIndex() {
 // Kick off background seeding (non-blocking)
 setTimeout(seedIndex, 2000);
 
+
+const POSTER_BASE = 'https://static-jpg.lk21.party/wp-content/uploads/';
+
+// Search via the source site's autocomplete API (gudangvape.com/search.php).
+// This is the same endpoint the source site's own search bar uses.
+// Filters to movies only; maps partial poster paths to full URLs.
+async function searchSource(query) {
+  try {
+    const res = await axios.get('https://gudangvape.com/search.php', {
+      params: { s: query },
+      headers: {
+        'User-Agent': HEADERS['User-Agent'],
+        Referer: `${BASE}/`,
+        Accept: 'application/json',
+      },
+      timeout: 8000,
+    });
+    const items = Array.isArray(res.data?.data) ? res.data.data : [];
+    return items
+      .filter(m => m.type === 'movie' && m.slug)
+      .map(m => ({
+        slug:   m.slug,
+        // Strip trailing " (YYYY)" from title — year is stored separately
+        title:  m.title.replace(/\s*\(\d{4}\)\s*$/, '').trim(),
+        poster: m.poster ? POSTER_BASE + m.poster : '',
+        year:   String(m.year || ''),
+        rating: String(m.rating || ''),
+        genre:  '',
+      }));
+  } catch {
+    return [];
+  }
+}
+
 async function search(query) {
   const q = query.trim();
   if (!q) return [];
 
-  // Use the source site's own search endpoint as primary source.
-  // This gives accurate, ranked, up-to-date results without relying on
-  // what happens to be in the local index.
-  try {
-    const searchUrl = `${BASE}/?s=${encodeURIComponent(q)}`;
-    const $ = await get(searchUrl);
-    const cards = extractCards($); // series already filtered out
-    indexMovies(cards);            // cache side-effect
-    if (cards.length > 0) return cards;
-  } catch (e) {
-    console.warn('[search] site search failed, falling back to index:', e.message);
+  // --- Strategy 1: source site search API ---
+  const fromSource = await searchSource(q);
+  if (fromSource.length > 0) {
+    indexMovies(fromSource);
+    return fromSource;
   }
 
-  // Fallback: query the SQLite cache (useful if the site is unreachable)
-  const like = `%${q.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
-  return _searchLike.all(like, like);
+  // --- Strategy 2: SQLite cache (fallback if source API is down) ---
+  const titlePart = q.replace(/\b(19|20)\d{2}\b/, '').trim();
+  const searchKey = (titlePart || q).toLowerCase();
+  const like = `%${searchKey.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
+  const cached = _searchLike.all(like, like);
+  if (cached.length > 0) return cached;
+
+  return [];
 }
+
+// Extract the lk21 slug from a source web URL.
+// e.g. "https://tv10.lk21official.cc/the-hunt-2012/" → "the-hunt-2012"
+function slugFromSourceUrl(url) {
+  try {
+    const { hostname, pathname } = new URL(url);
+    // Must be an actual lk21 domain — "lk21" must appear as a full segment,
+    // not merely as a substring of another word (e.g. "notlk21.com" must be rejected).
+    // Covers: tv10.lk21official.cc, lk21official.love, lk21.de, lk21.party, etc.
+    if (!/(?:^|\.)lk21(?:official\.(?:cc|love)|\.(?:de|party|cc|my\.id)|official)?(?:$|\.)/i.test(hostname)) return null;
+    const slug = pathname.replace(/^\/|\/$/g, '');
+    return slug || null;
+  } catch {
+    return null;
+  }
+}
+
+
 
 async function browse(path = '') {
   const url = path ? `${BASE}/${path}/`.replace(/\/\/$/, '/') : BASE;
@@ -368,4 +432,4 @@ async function browse(path = '') {
   return movies;
 }
 
-module.exports = { getMovie, search, browse };
+module.exports = { getMovie, search, browse, slugFromSourceUrl };

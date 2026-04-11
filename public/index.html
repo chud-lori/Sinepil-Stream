@@ -104,6 +104,14 @@
   </select>
 </div>
 
+<!-- WATCH BY URL -->
+<div id="url-bar">
+  <span class="url-bar-label">&#128279; Watch by URL:</span>
+  <input id="url-input" type="url" placeholder="Paste a source site URL to watch directly…"
+    onkeydown="if(event.key==='Enter') watchByUrl()" />
+  <button onclick="watchByUrl()">Watch</button>
+</div>
+
 <!-- SECTIONS -->
 <div id="sec-browse" class="section active">
   <div class="section-header">
