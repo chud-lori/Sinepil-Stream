@@ -1,13 +1,13 @@
 {
   "name": "sinepilstream",
   "version": "1.0.0",
-  "description": "",
+  "description": "SinepilStream is a lightweight, self-hosted movie streaming app that scrapes content on the fly.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
-  "keywords": [],
+  "keywords": ["movie streaming", "watch movies online", "free movies", "tv shows", "sinepilstream", "self-hosted streaming", "cinema"],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
