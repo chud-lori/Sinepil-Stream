@@ -24,5 +24,8 @@
     "better-sqlite3": "^12.8.0",
     "cheerio": "^1.2.0",
     "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^0.1.97"
   }
 }

@@ -230,9 +230,16 @@ async function openMovie(slug) {
       return;
     }
 
-    currentMovie   = data;
-    // Use the player order from the website (already resolved during scraping)
-    currentPlayers = data.players || [];
+    currentMovie = data;
+    // Reorder players: CAST and HYDRAX tend to work; P2P and TURBOVIP often fail.
+    const PLAYER_PRIORITY = ['CAST', 'HYDRAX', 'TURBOVIP', 'P2P'];
+    currentPlayers = (data.players || []).slice().sort((a, b) => {
+      const ai = PLAYER_PRIORITY.indexOf(a.label?.toUpperCase());
+      const bi = PLAYER_PRIORITY.indexOf(b.label?.toUpperCase());
+      const av = ai === -1 ? PLAYER_PRIORITY.length : ai;
+      const bv = bi === -1 ? PLAYER_PRIORITY.length : bi;
+      return av - bv;
+    });
 
     renderModal(data);
 
