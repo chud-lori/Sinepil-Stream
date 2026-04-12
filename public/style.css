@@ -366,6 +366,55 @@ nav {
   border: none;
 }
 
+.player-fullscreen-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  background: rgba(0,0,0,0.6);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  width: 32px;
+  height: 32px;
+  display: none; /* shown only when an iframe is loaded */
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.player-wrap:hover .player-fullscreen-btn { opacity: 1; }
+
+/* In fullscreen: fill screen, fix aspect-ratio trick, keep button visible */
+.player-wrap:fullscreen,
+.player-wrap:-webkit-full-screen {
+  padding-bottom: 0;
+  height: 100%;
+  width: 100%;
+}
+.player-wrap:fullscreen iframe,
+.player-wrap:-webkit-full-screen iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+/* Always show our exit button in fullscreen — user must be able to find it */
+.player-wrap:fullscreen .player-fullscreen-btn,
+.player-wrap:-webkit-full-screen .player-fullscreen-btn {
+  opacity: 1;
+  background: rgba(0,0,0,0.75);
+}
+
+.player-fullscreen-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
 .player-placeholder {
   position: absolute;
   inset: 0;

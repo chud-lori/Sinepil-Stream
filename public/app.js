@@ -330,7 +330,14 @@ function loadPlayer(index) {
     allowfullscreen
     allow="autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write"
     referrerpolicy="no-referrer"
-  ></iframe>`;
+  ></iframe>
+  <button class="player-fullscreen-btn" id="player-fullscreen-btn"
+          onclick="fullscreenPlayer()" title="Fullscreen" style="display:flex">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+      <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+    </svg>
+  </button>`;
 }
 
 function playerErrorHTML(msg, currentIndex) {
@@ -409,8 +416,39 @@ function resetPlayer(msg) {
         <circle cx="12" cy="12" r="10"/><polygon points="10,8 16,12 10,16"/>
       </svg>
       <span>${msg || 'Select a player below to start watching'}</span>
-    </div>`;
+    </div>
+    <button class="player-fullscreen-btn" id="player-fullscreen-btn"
+            onclick="fullscreenPlayer()" title="Fullscreen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+        <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+      </svg>
+    </button>`;
 }
+
+/* ---- Fullscreen the player wrap (not the iframe) so our button stays visible ---- */
+function fullscreenPlayer() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+    return;
+  }
+  const wrap = document.getElementById('player-wrap');
+  if (!wrap || !wrap.querySelector('iframe')) return;
+  (wrap.requestFullscreen || wrap.webkitRequestFullscreen || wrap.mozRequestFullScreen)?.call(wrap);
+}
+
+// Sync button icon with actual fullscreen state
+function _onFullscreenChange() {
+  const btn = document.getElementById('player-fullscreen-btn');
+  if (!btn) return;
+  const isFs = !!document.fullscreenElement;
+  btn.title = isFs ? 'Exit fullscreen' : 'Fullscreen';
+  btn.querySelector('svg').innerHTML = isFs
+    ? '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>'
+    : '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
+}
+document.addEventListener('fullscreenchange', _onFullscreenChange);
+document.addEventListener('webkitfullscreenchange', _onFullscreenChange);
 
 /* ---- Toggle description ---- */
 function toggleDesc() {
