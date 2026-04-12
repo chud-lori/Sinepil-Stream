@@ -291,6 +291,64 @@ app.get('/api/proxy', async (req, res) => {
 });
 
 /* ======================================================
+   /movie/:slug — bot-aware OG meta renderer
+   Regular browsers get index.html (SPA handles it).
+   Crawlers (WhatsApp, Telegram, Twitter, etc.) get a
+   minimal HTML page with movie-specific OG tags so the
+   link preview shows the actual poster + title.
+   ====================================================== */
+
+const BOT_UA = /WhatsApp|Telegram|TelegramBot|Twitterbot|facebookexternalhit|LinkedInBot|Discordbot|Slackbot-Linkexpanding|Applebot|Googlebot|bingbot/i;
+
+function escHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+app.get('/movie/:slug', async (req, res, next) => {
+  // Let regular browsers fall through to the SPA
+  if (!BOT_UA.test(req.headers['user-agent'] || '')) return next();
+
+  try {
+    const data = await scraper.getMovie(req.params.slug);
+    if (!data || data.isSeries || data.error) return next();
+
+    const title = data.title + (data.year ? ` (${data.year})` : '') + ' — SinepilStream';
+    const desc  = (data.description || `Watch ${data.title} on SinepilStream — ad-free.`).slice(0, 200);
+    const image = data.poster || `https://${req.headers.host}/og-image.png`;
+    const url   = `https://${req.headers.host}/movie/${encodeURIComponent(req.params.slug)}`;
+
+    res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>${escHtml(title)}</title>
+  <meta property="og:type" content="video.movie">
+  <meta property="og:site_name" content="SinepilStream">
+  <meta property="og:url" content="${escHtml(url)}">
+  <meta property="og:title" content="${escHtml(title)}">
+  <meta property="og:description" content="${escHtml(desc)}">
+  <meta property="og:image" content="${escHtml(image)}">
+  <meta property="og:image:alt" content="${escHtml(data.title)}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${escHtml(title)}">
+  <meta name="twitter:description" content="${escHtml(desc)}">
+  <meta name="twitter:image" content="${escHtml(image)}">
+  <link rel="canonical" href="${escHtml(url)}">
+  <!-- Redirect browsers that somehow land here to the SPA -->
+  <meta http-equiv="refresh" content="0;url=${escHtml(url)}">
+</head>
+<body></body>
+</html>`);
+  } catch {
+    next();
+  }
+});
+
+/* ======================================================
    SPA fallback
    ====================================================== */
 app.use((req, res) => {
