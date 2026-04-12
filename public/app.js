@@ -96,10 +96,20 @@ async function watchByUrl() {
   toast('URL not recognised — must be a link from the source site');
 }
 
+/* ---- Skeleton card placeholder ---- */
+const SKELETON_CARD = `
+  <div class="card card-skeleton" aria-hidden="true">
+    <div class="card-img-wrap"></div>
+    <div class="card-body">
+      <div class="skeleton-line"></div>
+      <div class="skeleton-line skeleton-line--short"></div>
+    </div>
+  </div>`;
+
 /* ---- Generic grid loader ---- */
 async function loadGrid(gridId, apiUrl, badgeId) {
   const grid = document.getElementById(gridId);
-  grid.innerHTML = '<div class="spinner"></div>';
+  grid.innerHTML = Array(12).fill(SKELETON_CARD).join('');
   if (badgeId) document.getElementById(badgeId).textContent = '';
   try {
     const res  = await fetch(apiUrl);
@@ -147,9 +157,11 @@ function renderWishlist() {
 /* ---- Card HTML ---- */
 function cardHTML(m, opts = {}) {
   const poster = m.poster
-    ? `<img class="card-img" src="${esc(m.poster)}" alt="${esc(m.title)}" loading="lazy"
-          onload="this.classList.add('loaded')"
-          onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+    ? `<div class="card-img-wrap">
+         <img class="card-img" src="${esc(m.poster)}" alt="${esc(m.title)}" loading="lazy"
+           onload="this.classList.add('loaded');this.parentElement.classList.add('loaded')"
+           onerror="this.parentElement.classList.add('loaded');this.style.display='none';this.parentElement.nextElementSibling.style.display='flex'">
+       </div>`
     : '';
   const placeholder = `<div class="card-img-placeholder" ${m.poster ? 'style="display:none"' : ''}>&#127916;</div>`;
   const stars = m.rating ? `<span class="card-rating">&#9733; ${m.rating}</span>` : '';

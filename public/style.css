@@ -219,19 +219,48 @@ nav {
   border-color: var(--accent);
 }
 
+/* Shimmer lives on the wrapper, not the <img>, so the browser's
+   broken-image icon (which ignores CSS backgrounds) never shows */
+.card-img-wrap {
+  width: 100%;
+  aspect-ratio: 2/3;
+  background: linear-gradient(90deg, var(--surface) 25%, var(--border) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  overflow: hidden;
+}
+.card-img-wrap.loaded {
+  background: var(--card);
+  animation: none;
+}
+
 .card-img {
   width: 100%;
   aspect-ratio: 2/3;
   object-fit: cover;
   display: block;
-  /* skeleton shimmer until image loads */
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.card-img.loaded {
+  opacity: 1;
+}
+
+/* ---- Skeleton cards (grid loading state) ---- */
+.card-skeleton {
+  pointer-events: none;
+  cursor: default;
+}
+.skeleton-line {
+  height: 13px;
+  border-radius: 4px;
+  margin-bottom: 7px;
   background: linear-gradient(90deg, var(--surface) 25%, var(--border) 50%, var(--surface) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
 }
-.card-img.loaded {
-  background: var(--surface);
-  animation: none;
+.skeleton-line--short {
+  width: 55%;
 }
 
 .card-img-placeholder {
