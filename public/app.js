@@ -204,10 +204,14 @@ function quickWishlist(btn, movieJson) {
 }
 
 /* ---- Open movie modal ---- */
-async function openMovie(slug) {
+async function openMovie(slug, { pushHistory = true } = {}) {
   currentMovie   = null;
   currentPlayers = [];
   descExpanded   = false;
+
+  if (pushHistory) {
+    history.pushState({ slug }, '', '/movie/' + encodeURIComponent(slug));
+  }
 
   document.getElementById('modal-overlay').classList.add('open');
   resetPlayer('Loading…');
@@ -364,6 +368,29 @@ function closeModal(e) {
   resetPlayer();
   currentMovie   = null;
   currentPlayers = [];
+  // Restore URL to home (only if we're currently on a /movie/ path)
+  if (location.pathname.startsWith('/movie/')) {
+    history.pushState({}, '', '/');
+  }
+}
+
+/* ---- Share movie ---- */
+function shareMovie() {
+  if (!currentMovie) return;
+  const url = location.origin + '/movie/' + encodeURIComponent(currentMovie.slug);
+  if (navigator.share) {
+    navigator.share({
+      title: currentMovie.title,
+      text: `Watch "${currentMovie.title}" on SinepilStream`,
+      url,
+    }).catch(() => {});
+  } else {
+    navigator.clipboard.writeText(url).then(() => {
+      toast('Link copied to clipboard!');
+    }).catch(() => {
+      toast('Share: ' + url);
+    });
+  }
 }
 
 function resetPlayer(msg) {
@@ -415,8 +442,30 @@ document.addEventListener('keydown', e => {
   }
 });
 
+/* ---- Browser back/forward ---- */
+window.addEventListener('popstate', (e) => {
+  if (e.state?.slug) {
+    // Navigated forward to a movie URL
+    openMovie(e.state.slug, { pushHistory: false });
+  } else {
+    // Navigated back to '/'
+    if (document.getElementById('modal-overlay').classList.contains('open')) {
+      document.getElementById('modal-overlay').classList.remove('open');
+      resetPlayer();
+      currentMovie   = null;
+      currentPlayers = [];
+    }
+  }
+});
+
 /* ---- Init ---- */
 (function init() {
   document.getElementById('browse-bar').style.display = 'flex';
   loadGrid('browse-grid', '/api/browse');
+
+  // Open movie if landing directly on /movie/:slug
+  const m = location.pathname.match(/^\/movie\/([^/]+)$/);
+  if (m) {
+    openMovie(decodeURIComponent(m[1]), { pushHistory: false });
+  }
 })();
