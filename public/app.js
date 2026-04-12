@@ -350,6 +350,7 @@ function loadPlayer(index) {
       <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
     </svg>
   </button>`;
+  showFsBtn(); // show briefly when player loads, then auto-hides after 3s
 }
 
 function playerErrorHTML(msg, currentIndex) {
@@ -438,6 +439,25 @@ function resetPlayer(msg) {
     </button>`;
 }
 
+/* ---- Fullscreen button idle-show/hide ---- */
+let _fsIdleTimer = null;
+
+function showFsBtn() {
+  const btn = document.getElementById('player-fullscreen-btn');
+  if (!btn || btn.style.display !== 'flex') return;
+  btn.classList.add('visible');
+  clearTimeout(_fsIdleTimer);
+  _fsIdleTimer = setTimeout(() => {
+    const b = document.getElementById('player-fullscreen-btn');
+    if (b) b.classList.remove('visible');
+  }, 3000);
+}
+
+// Show on mouse move over the player area
+document.getElementById('player-wrap').addEventListener('mousemove', showFsBtn);
+// Show on any keypress (useful in fullscreen where mouse events are inside iframe)
+document.addEventListener('keydown', showFsBtn);
+
 /* ---- Fullscreen the player wrap (not the iframe) so our button stays visible ---- */
 function fullscreenPlayer() {
   if (document.fullscreenElement) {
@@ -449,7 +469,7 @@ function fullscreenPlayer() {
   (wrap.requestFullscreen || wrap.webkitRequestFullscreen || wrap.mozRequestFullScreen)?.call(wrap);
 }
 
-// Sync button icon with actual fullscreen state
+// Sync button icon with fullscreen state and show button briefly on transition
 function _onFullscreenChange() {
   const btn = document.getElementById('player-fullscreen-btn');
   if (!btn) return;
@@ -458,6 +478,7 @@ function _onFullscreenChange() {
   btn.querySelector('svg').innerHTML = isFs
     ? '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="3" y2="21"/><line x1="21" y1="3" x2="14" y2="10"/>'
     : '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
+  showFsBtn(); // always show briefly on fullscreen enter/exit
 }
 document.addEventListener('fullscreenchange', _onFullscreenChange);
 document.addEventListener('webkitfullscreenchange', _onFullscreenChange);

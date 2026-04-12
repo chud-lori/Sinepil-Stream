@@ -413,7 +413,7 @@ nav {
   opacity: 0;
   transition: opacity 0.2s;
 }
-.player-wrap:hover .player-fullscreen-btn { opacity: 1; }
+.player-fullscreen-btn.visible { opacity: 1; }
 
 /* In fullscreen: fill screen, fix aspect-ratio trick, keep button visible */
 .player-wrap:fullscreen,
