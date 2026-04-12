@@ -1,169 +1,180 @@
-# Deployment Guide
+# SinepilStream — Deployment Guide
 
-## Prerequisites
-
-On your server:
-- Docker + Docker Compose
-- Nginx
-- A domain pointed to the server (via Cloudflare, orange cloud / proxied)
-- GitHub deploy key configured (see [Deploy Key Setup](#deploy-key-setup) below)
+Two deployment modes are available: **PM2** (zero-downtime, recommended) and **Docker** (blue-green, ~3 s window).
 
 ---
 
-## First Deploy
+## Quick Start
 
-**1. Clone the repo**
 ```bash
-git clone github-sinepilstream:chud-lori/Sinepil-Stream.git
-cd Sinepil-Stream
+# First-time setup (PM2)
+make install
+
+# Deploy latest code (zero-downtime)
+make deploy
 ```
 
-**2. Start the app**
+---
+
+## PM2 Mode (Recommended)
+
+PM2 is the primary deployment method. It provides **true zero-downtime reloads**: the new process must signal readiness before the old one is killed, so no requests are dropped.
+
+### How it works
+
+1. `pm2 reload` starts the new Node process alongside the old one.
+2. The new process calls `process.send('ready')` after `app.listen()` completes.
+3. PM2 receives the `ready` signal and routes all new traffic to the new process.
+4. PM2 sends SIGINT to the old process; it finishes in-flight requests and exits cleanly.
+5. If `ready` is not received within `listen_timeout` (12 s), PM2 aborts and keeps the old process.
+
+### Prerequisites
+
 ```bash
-docker compose up -d --build
+npm install -g pm2
 ```
 
-Verify:
+### First-time setup
+
 ```bash
-docker ps
-docker logs sinepilstream
+make install
 ```
 
-**3. Configure Nginx**
+This runs `npm install --omit=dev`, creates `logs/` and `data/` directories, starts the app via PM2, saves the process list, and prints the `pm2 startup` command needed to survive reboots.
 
-Create `/etc/nginx/sites-available/sinepilstream`:
-```nginx
-server {
-    listen 80;
-    server_name yourdomain.com;
+Run the printed `pm2 startup` command once (it requires sudo) to register the PM2 daemon as a system service.
 
-    location / {
-        proxy_pass http://localhost:3500;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
+### Deploy (zero-downtime)
+
+```bash
+make deploy
+# or directly:
+bash deploy.sh
+```
+
+Pulls latest code from `origin main`, installs dependencies, and runs `pm2 reload ecosystem.config.js --update-env`.
+
+### Other PM2 targets
+
+| Command | Effect |
+|---------|--------|
+| `make start` | Start the app (first time or after `make stop`) |
+| `make stop` | Stop the app |
+| `make restart` | Hard restart (brief downtime) |
+| `make logs` | Tail PM2 logs (last 100 lines) |
+| `make status` | Show PM2 process status |
+
+### Configuration
+
+`ecosystem.config.js` controls PM2 behaviour:
+
+```js
+{
+  name:           'sinepilstream',
+  script:         'server.js',
+  instances:      1,          // single instance — SQLite doesn't support multi-process writes
+  exec_mode:      'fork',
+  wait_ready:     true,       // wait for process.send('ready') before cutting over
+  listen_timeout: 12000,      // ms to wait for ready signal before aborting reload
+  kill_timeout:   10000,      // ms to wait for in-flight requests before SIGKILL
+  env: {
+    NODE_ENV: 'production',
+    PORT:     3500,
+  },
+  autorestart:        true,
+  max_memory_restart: '300M',
+  out_file:   './logs/out.log',
+  error_file: './logs/error.log',
 }
 ```
 
-Enable and reload:
+---
+
+## Docker Mode
+
+Docker deployment uses a **blue-green** pattern. A new container is started and health-checked before the old one is stopped, limiting downtime to the docker stop latency (~1–2 s).
+
+### Prerequisites
+
+- Docker Engine with the `docker compose` plugin (v2)
+
+### Deploy
+
 ```bash
-sudo ln -s /etc/nginx/sites-available/sinepilstream /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
+make docker-deploy
+# or directly:
+bash deploy.sh --docker
 ```
 
-**4. Cloudflare Settings**
+Steps performed:
+1. `git pull origin main`
+2. `docker compose build --no-cache`
+3. Start a temporary "green" container on `PORT+1` for health checking
+4. Poll `GET /api/browse` every second for up to 30 s
+5. Stop and remove the old "blue" container
+6. `docker compose up -d` — bring up the new image with correct volumes and restart policy
 
-- DNS A record → your server IP, proxy **enabled** (orange cloud)
-- SSL/TLS mode → **Flexible** (Cloudflare to server is plain HTTP on port 80)
+If the green container fails to start or fails the health check, it is removed and the old container continues serving.
+
+### Other Docker targets
+
+| Command | Effect |
+|---------|--------|
+| `make docker-build` | Build image only |
+| `make docker-logs` | Tail container logs (last 100 lines) |
+| `make docker-stop` | Stop and remove container (`docker compose down`) |
 
 ---
 
-## Updating (Re-deploy)
+## Environment Variables
 
-```bash
-cd Sinepil-Stream
-git pull origin main
-docker compose up -d --build
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3500` | HTTP port the server listens on |
+| `NODE_ENV` | `production` | Node environment |
 
-> **Note on `better-sqlite3`:** this is a native C++ addon. The Dockerfile installs
-> `python3 make g++` during the build step so it compiles correctly inside the Alpine
-> container. You don't need anything extra on the host — Docker handles it.
+Set these in `ecosystem.config.js` (PM2) or `docker-compose.yml` (Docker).
 
 ---
 
-## Persistent Data (SQLite)
+## File Layout
 
-Movie data is stored in a **Docker named volume** (`sinepilstream_data`), managed by
-Docker at `/var/lib/docker/volumes/sinepilstream_data/`. It is completely separate from
-the project directory, so it survives:
-
-- `git pull` / re-clone
-- `docker compose up -d --build` (rebuild)
-- Moving or deleting the project folder
-
-The only way to lose it is explicitly running `docker volume rm sinepilstream_data`
-or `docker compose down -v` (the `-v` flag removes volumes — never use it in prod).
-
-To inspect the DB on the server:
-```bash
-docker exec sinepilstream node -e "
-const db = require('better-sqlite3')('/app/data/movies.db');
-console.log('total:', db.prepare('SELECT COUNT(*) AS n FROM movies').get().n);
-"
+```
+sinepil-stream/
+├── server.js             # Express app + API routes
+├── scraper.js            # Scraping + SQLite index
+├── ecosystem.config.js   # PM2 process definition
+├── deploy.sh             # Deploy script (PM2 + Docker modes)
+├── Makefile              # Convenience targets
+├── data/
+│   └── movies.db         # SQLite movie index (persistent)
+├── logs/
+│   ├── out.log           # PM2 stdout
+│   └── error.log         # PM2 stderr
+└── public/               # Static frontend (SPA)
 ```
 
-To back up the DB:
-```bash
-docker cp sinepilstream:/app/data/movies.db ./movies.db.bak
-```
+### Data persistence
 
-To restore a backup:
-```bash
-docker cp ./movies.db.bak sinepilstream:/app/data/movies.db
-```
+- `data/movies.db` — SQLite database containing the scraped movie index. **Do not delete.** It is populated incrementally; rebuilding it requires re-scraping all browse pages.
+- `logs/` — rotating log files. Safe to delete if disk space is needed; PM2 will recreate them.
 
----
+In Docker, mount `data/` as a named volume so the database survives container replacements:
 
-## Deploy Key Setup
-
-Use this if the repo is private or you want key-based auth instead of HTTPS.
-
-**1. Generate a key on the server**
-```bash
-ssh-keygen -t ed25519 -C "sinepilstream-deploy" -f ~/.ssh/sinepilstream_deploy
-```
-
-**2. Add the public key to GitHub**
-
-Copy the public key:
-```bash
-cat ~/.ssh/sinepilstream_deploy.pub
-```
-
-Go to: GitHub repo → Settings → Deploy keys → Add deploy key  
-Paste the public key. Read-only access is sufficient.
-
-**3. Add SSH config alias**
-
-Append to `~/.ssh/config`:
-```
-Host github-sinepilstream
-    HostName github.com
-    User git
-    IdentityFile ~/.ssh/sinepilstream_deploy
-```
-
-**4. Test**
-```bash
-ssh -T github-sinepilstream
-```
-
-Should return: `Hi chud-lori/Sinepil-Stream! You've successfully authenticated...`
-
-Then clone using the alias:
-```bash
-git clone github-sinepilstream:chud-lori/Sinepil-Stream.git
+```yaml
+# docker-compose.yml
+volumes:
+  - sinepilstream_data:/app/data
 ```
 
 ---
 
-## Logs
+## Graceful Shutdown
 
-```bash
-# Live logs
-docker logs -f sinepilstream
+The server handles `SIGINT` (PM2 reload) and `SIGTERM` (docker stop) by:
 
-# App log files (mounted volume)
-tail -f logs/app.log
-```
+1. Calling `server.close()` — stops accepting new connections, waits for in-flight requests.
+2. Exiting cleanly once all connections are drained.
+3. Force-exiting after 15 s if connections are stuck (e.g. long-lived keep-alive connections).
 
-## Stop / Restart
-
-```bash
-docker compose down        # stop
-docker compose up -d       # start (no rebuild)
-docker compose up -d --build  # start with rebuild
-```
+This ensures zero dropped requests during PM2 zero-downtime reloads.

@@ -298,4 +298,23 @@ app.use((req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`SinepilStream running at http://localhost:${PORT}`));
+const server = app.listen(PORT, () => {
+  console.log(`SinepilStream running at http://localhost:${PORT}`);
+  // Signal PM2 that the process is ready — required for zero-downtime reload.
+  // pm2 reload waits for this before killing the old process.
+  if (process.send) process.send('ready');
+});
+
+// Graceful shutdown — finish in-flight requests before exiting.
+// Triggered by PM2 reload (SIGINT) or docker stop (SIGTERM).
+function shutdown(signal) {
+  console.log(`[${signal}] Shutting down gracefully…`);
+  server.close(() => {
+    console.log('All connections closed. Exiting.');
+    process.exit(0);
+  });
+  // Force-exit after 15 s if connections are stuck
+  setTimeout(() => { console.warn('Force exit after timeout'); process.exit(1); }, 15000).unref();
+}
+process.on('SIGINT',  () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
