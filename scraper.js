@@ -18,9 +18,6 @@ const PLAYER_HEADERS = {
   Origin:  'https://tv10.lk21official.cc',
 };
 
-// Domains whose CSP frame-ancestors block embedding from localhost.
-// For these we route through /api/proxy. Everything else is loaded directly.
-const PROXY_DOMAINS = /cloud\.hownetwork\.xyz/i;
 
 // Slug / itemtype patterns that reliably indicate a TV series rather than a movie.
 const SERIES_SLUG_RE  = /\b(season|episode|eps|ep-?\d+|s\d{1,2}e\d{1,2})\b/i;
@@ -302,23 +299,21 @@ async function getMovie(slug) {
 
   const players = rawPlayers.map((p, i) => {
     const innerUrl = resolved[i].status === 'fulfilled' ? resolved[i].value : null;
-    let playerUrl;
+
+    // P2P (cloud.hownetwork.xyz) is behind Cloudflare JS challenge + hostname
+    // verification — it blocks all server-side proxy requests and never works
+    // in our environment. Drop it silently.
+    if (/cloud\.hownetwork\.xyz/i.test(innerUrl || p.src)) return null;
 
     if (!innerUrl) {
-      // Couldn't resolve — proxy the wrapper directly
-      playerUrl = `/api/proxy?url=${encodeURIComponent(p.src)}`;
-      return { ...p, finalUrl: playerUrl, proxied: true };
+      // Couldn't resolve inner URL — proxy the playeriframe wrapper directly
+      return { ...p, finalUrl: `/api/proxy?url=${encodeURIComponent(p.src)}`, proxied: true };
     }
 
-    if (PROXY_DOMAINS.test(innerUrl)) {
-      // Domain needs proxy (has frame-ancestors CSP)
-      playerUrl = `/api/proxy?url=${encodeURIComponent(innerUrl)}`;
-      return { ...p, finalUrl: playerUrl, proxied: true, innerUrl };
-    }
-
-    // All good — embed directly
+    // CAST, HYDRAX, TURBOVIP embed directly — they use Cloudflare + hostname
+    // checks so proxying causes 403 or blank player.
     return { ...p, finalUrl: innerUrl, proxied: false, innerUrl };
-  });
+  }).filter(Boolean);
 
   return {
     slug, title, poster, description, genre, year, rating, duration,

@@ -380,6 +380,30 @@ nav {
 
 .player-placeholder svg { width: 56px; height: 56px; opacity: 0.3; }
 
+/* Ad notice */
+.ad-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  background: #1a140a;
+  border-bottom: 1px solid #3a2a10;
+  color: #a07040;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.ad-notice a { color: #f59e0b; text-underline-offset: 2px; }
+.ad-notice button {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #a07040;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
 /* Player tabs */
 .player-tabs {
   display: flex;

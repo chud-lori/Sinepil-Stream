@@ -18,35 +18,62 @@ const PLAYER_HDRS = {
   'Accept':     'text/html,application/xhtml+xml,*/*',
 };
 
-// Injected into P2P proxy HTML:
-//  1. Override XHR POST body so d=<anything> becomes d=tv10.lk21official.cc
+// Injected into every proxied player page:
+//  1. Override XHR so api2.php calls route through our /api/p2p-api (CORS fix)
 //  2. Spoof document.referrer
-//  3. Redirect api2.php XHR calls to our /api/p2p-api backend (avoids CORS)
+//  3. Block all popup / popunder / redirect ad techniques
 const SPOOF_SCRIPT = `<script>
 (function(){
-  var _open = XMLHttpRequest.prototype.open;
-  var _send = XMLHttpRequest.prototype.send;
-  var _apiTarget = null;
-
+  /* --- XHR intercept for P2P api2.php --- */
+  var _xhrOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(method, url, async){
-    if(url && (url.includes('api2.php') || url.match(/api2\\.php/))){
+    if(url && url.includes('api2.php')){
       var m = url.match(/[?&]id=([^&]+)/);
       url = '/api/p2p-api' + (m ? '?id=' + m[1] : '');
-      _apiTarget = url;
     }
-    _open.call(this, method, url, async !== false);
+    _xhrOpen.call(this, method, url, async !== false);
   };
 
-  XMLHttpRequest.prototype.send = function(body){
-    _send.call(this, body);
-  };
-
+  /* --- Spoof referrer --- */
   try {
     Object.defineProperty(document, 'referrer', {
       get: function(){ return '${LK21_ORIGIN}/'; },
       configurable: true
     });
   } catch(e){}
+
+  /* --- Ad blocker: kill every popup / redirect technique --- */
+
+  // 1. window.open → no-op (covers popunders, new-tab ads)
+  window.open = function(){ return null; };
+
+  // 2. Prevent top-frame navigation (window.top.location = ...)
+  try {
+    Object.defineProperty(window, 'top', { get: function(){ return window; } });
+  } catch(e){}
+
+  // 3. Block fetch/XHR to known ad domains
+  var AD_HOSTS = /popads|popcash|popunder|exoclick|juicyads|trafficjunky|hilltopads|adcash|propellerads|adsterra|monetag|yllix|olavivo|clickaine/i;
+  var _fetch = window.fetch;
+  window.fetch = function(input){
+    var url = typeof input === 'string' ? input : (input && input.url) || '';
+    if(AD_HOSTS.test(url)) return Promise.resolve(new Response('', {status:204}));
+    return _fetch.apply(this, arguments);
+  };
+
+  // 4. Strip body/document onclick ad triggers after DOM is ready
+  document.addEventListener('DOMContentLoaded', function(){
+    document.body && (document.body.onclick = null);
+    document.documentElement.onclick = null;
+  }, { once: true });
+
+  // 5. Block programmatic anchor clicks that bypass window.open
+  document.addEventListener('click', function(e){
+    var el = e.target && e.target.closest('a');
+    if(el && el.target === '_blank' && !el.href.includes(location.hostname)){
+      e.preventDefault(); e.stopImmediatePropagation();
+    }
+  }, true);
 })();
 </script>`;
 
@@ -245,6 +272,12 @@ app.get('/api/proxy', async (req, res) => {
 
       // Strip meta CSP tags
       html = html.replace(/<meta[^>]+http-equiv=["']Content-Security-Policy["'][^>]*>/gi, '');
+
+      // Strip external ad scripts by known ad-network domains
+      html = html.replace(
+        /<script[^>]+src=["'][^"']*(?:popads|popcash|popunder|exoclick|juicyads|trafficjunky|hilltopads|adcash|propellerads|adsterra|monetag|yllix|olavivo|clickaine|revcontent)[^"']*["'][^>]*>[\s\S]*?<\/script>/gi,
+        ''
+      );
 
       res.send(html);
     } else {

@@ -232,7 +232,7 @@ async function openMovie(slug) {
 
     currentMovie = data;
     // Reorder players: CAST and HYDRAX tend to work; P2P and TURBOVIP often fail.
-    const PLAYER_PRIORITY = ['CAST', 'HYDRAX', 'TURBOVIP', 'P2P'];
+    const PLAYER_PRIORITY = ['CAST', 'HYDRAX', 'TURBOVIP'];
     currentPlayers = (data.players || []).slice().sort((a, b) => {
       const ai = PLAYER_PRIORITY.indexOf(a.label?.toUpperCase());
       const bi = PLAYER_PRIORITY.indexOf(b.label?.toUpperCase());
