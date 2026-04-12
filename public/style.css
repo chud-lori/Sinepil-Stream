@@ -557,6 +557,7 @@ nav {
 .btn-wishlist { }
 .btn-wishlist.added { border-color: var(--accent2); color: var(--accent2); }
 
+
 /* ---- LOADING / EMPTY ---- */
 .spinner {
   display: flex;

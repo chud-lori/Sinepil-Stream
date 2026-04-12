@@ -290,6 +290,9 @@ function renderModal(data) {
   if (data.cast)     parts.push(`<strong>Cast:</strong> ${esc(data.cast)}`);
   document.getElementById('modal-cast').innerHTML = parts.join('<br>');
 
+  // Show native Share button only on devices that support it (mobile)
+  document.getElementById('btn-share-native').style.display = navigator.share ? '' : 'none';
+
   const wBtn = document.getElementById('btn-wishlist');
   const inWL = Wishlist.has(data.slug);
   wBtn.classList.toggle('added', inWL);
@@ -375,22 +378,28 @@ function closeModal(e) {
 }
 
 /* ---- Share movie ---- */
-function shareMovie() {
+function copyMovieLink() {
   if (!currentMovie) return;
   const url = location.origin + '/movie/' + encodeURIComponent(currentMovie.slug);
-  if (navigator.share) {
-    navigator.share({
-      title: currentMovie.title,
-      text: `Watch "${currentMovie.title}" on SinepilStream`,
-      url,
-    }).catch(() => {});
-  } else {
-    navigator.clipboard.writeText(url).then(() => {
-      toast('Link copied to clipboard!');
-    }).catch(() => {
-      toast('Share: ' + url);
-    });
-  }
+  const btn = document.getElementById('btn-copy-link');
+  navigator.clipboard.writeText(url).then(() => {
+    // In-button confirmation — no toast needed
+    const prev = btn.innerHTML;
+    btn.innerHTML = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="4 10 8 14 16 6"/>
+    </svg> Copied!`;
+    btn.style.cssText += 'border-color:var(--accent2);color:var(--accent2)';
+    setTimeout(() => { btn.innerHTML = prev; btn.style.cssText = ''; }, 2200);
+  }).catch(() => toast('Copy: ' + url));
+}
+
+function nativeShare() {
+  if (!currentMovie || !navigator.share) return;
+  navigator.share({
+    title: currentMovie.title,
+    text: `Watch "${currentMovie.title}" on SinepilStream`,
+    url: location.origin + '/movie/' + encodeURIComponent(currentMovie.slug),
+  }).catch(() => {});
 }
 
 function resetPlayer(msg) {

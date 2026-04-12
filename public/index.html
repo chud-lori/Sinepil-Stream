@@ -200,7 +200,13 @@
       <button class="btn btn-outline btn-wishlist" id="btn-wishlist" onclick="toggleWishlist()">
         &#9825; Wishlist
       </button>
-      <button class="btn btn-outline" id="btn-share" onclick="shareMovie()">
+      <button class="btn btn-outline" id="btn-copy-link" onclick="copyMovieLink()">
+        <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="7" y="7" width="10" height="12" rx="2"/><path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>
+        </svg>
+        Copy link
+      </button>
+      <button class="btn btn-outline" id="btn-share-native" onclick="nativeShare()" style="display:none">
         <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="15" cy="4" r="2"/><circle cx="15" cy="16" r="2"/><circle cx="4" cy="10" r="2"/>
           <line x1="6" y1="11" x2="13" y2="15"/><line x1="13" y1="5" x2="6" y2="9"/>
