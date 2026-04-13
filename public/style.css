@@ -353,18 +353,29 @@ nav {
   height: 28px;
   border-radius: 50%;
   border: none;
-  background: rgba(0,0,0,0.75);
+  background: rgba(0,0,0,0.65);
   color: #fff;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s, transform 0.18s;
 }
 
-.card-btn:hover  { background: var(--accent); }
-.card-btn.active { background: var(--accent2); color: #000; }
+.card-btn:hover { background: rgba(0,0,0,0.85); }
+/* Active = wishlisted: keep the dark pill, color the heart brand-red.
+   Same convention as Twitter, Instagram, Pinterest, Apple Music. */
+.card-btn.active {
+  color: var(--accent);
+  animation: heart-pop 0.3s ease-out;
+}
+@keyframes heart-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
 
 /* ---- MODAL ---- */
 .modal-overlay {

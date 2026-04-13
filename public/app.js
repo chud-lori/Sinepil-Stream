@@ -183,10 +183,11 @@ function cardHTML(m, opts = {}) {
     // Embedding JSON in onclick="…" breaks for titles containing apostrophes
     // because esc() turns ' into &#x27; which the browser decodes back to ' BEFORE
     // the JS parser sees it, terminating the string literal early.
+    const isWl = Wishlist.has(m.slug);
     actions = `
       <div class="card-actions">
-        <button class="card-btn${Wishlist.has(m.slug) ? ' active' : ''}" title="Wishlist"
-          data-action="wishlist" data-movie="${esc(JSON.stringify(m))}">&#9825;</button>
+        <button class="card-btn${isWl ? ' active' : ''}" title="Wishlist"
+          data-action="wishlist" data-movie="${esc(JSON.stringify(m))}">${isWl ? '&#9829;' : '&#9825;'}</button>
       </div>`;
   }
 
@@ -248,6 +249,9 @@ function quickWishlist(btn, movie) {
   if (!movie?.slug) return;
   const added = Wishlist.toggle(movie);
   btn.classList.toggle('active', added);
+  // Swap outline ♡ → filled ♥ to match the convention everyone knows from
+  // Twitter / Instagram / Pinterest / Apple Music.
+  btn.innerHTML = added ? '&#9829;' : '&#9825;';
   toast(added ? `Added "${movie.title}" to wishlist` : 'Removed from wishlist');
 }
 
