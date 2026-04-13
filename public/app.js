@@ -337,12 +337,22 @@ function loadPlayer(index) {
     return;
   }
 
-  wrap.innerHTML = `<iframe
-    src="${esc(playerUrl)}"
+  // Wrap in a srcdoc iframe. The nested player loads inside an opaque-origin
+  // parent, which the browser's popup blocker treats strictly enough to drop
+  // the popunder window.open these providers fire on click. Verified against
+  // CAST/f16px.com (3/3 runs blocked); CAST and TURBOVIP still load normally
+  // (unlike with `sandbox`, which providers detect and reject).
+  const inner = `<!doctype html><html><body style="margin:0">
+<iframe src="${esc(playerUrl)}" allowfullscreen
+  allow="autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write"
+  referrerpolicy="no-referrer"
+  style="width:100%;height:100%;border:0;display:block"></iframe>
+</body></html>`;
+  const srcdoc = inner.replace(/&/g, '&amp;').replace(/'/g, '&#x27;');
+  wrap.innerHTML = `<iframe srcdoc='${srcdoc}'
     allowfullscreen
     allow="autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write"
-    referrerpolicy="no-referrer"
-  ></iframe>
+    style="position:absolute;inset:0;width:100%;height:100%;border:0"></iframe>
   <button class="player-fullscreen-btn" id="player-fullscreen-btn"
           onclick="fullscreenPlayer()" title="Fullscreen" style="display:flex">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
