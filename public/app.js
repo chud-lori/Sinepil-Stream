@@ -160,7 +160,7 @@ function cardHTML(m, opts = {}) {
     ? `<div class="card-img-wrap">
          <img class="card-img" src="${esc(m.poster)}" alt="${esc(m.title)}" loading="lazy"
            onload="this.classList.add('loaded');this.parentElement.classList.add('loaded')"
-           onerror="this.parentElement.classList.add('loaded');this.style.display='none';this.parentElement.nextElementSibling.style.display='flex'">
+           onerror="this.parentElement.style.display='none';this.parentElement.nextElementSibling.style.display='flex'">
        </div>`
     : '';
   const placeholder = `<div class="card-img-placeholder" ${m.poster ? 'style="display:none"' : ''}>&#127916;</div>`;
@@ -337,22 +337,12 @@ function loadPlayer(index) {
     return;
   }
 
-  // Wrap in a srcdoc iframe. The nested player loads inside an opaque-origin
-  // parent, which the browser's popup blocker treats strictly enough to drop
-  // the popunder window.open these providers fire on click. Verified against
-  // CAST/f16px.com (3/3 runs blocked); CAST and TURBOVIP still load normally
-  // (unlike with `sandbox`, which providers detect and reject).
-  const inner = `<!doctype html><html style="height:100%"><body style="margin:0;height:100%;background:#000">
-<iframe src="${esc(playerUrl)}" allowfullscreen
-  allow="autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write"
-  referrerpolicy="no-referrer"
-  style="width:100%;height:100%;border:0;display:block"></iframe>
-</body></html>`;
-  const srcdoc = inner.replace(/&/g, '&amp;').replace(/'/g, '&#x27;');
-  wrap.innerHTML = `<iframe srcdoc='${srcdoc}'
+  wrap.innerHTML = `<iframe
+    src="${esc(playerUrl)}"
     allowfullscreen
     allow="autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write"
-    style="position:absolute;inset:0;width:100%;height:100%;border:0"></iframe>
+    referrerpolicy="no-referrer"
+  ></iframe>
   <button class="player-fullscreen-btn" id="player-fullscreen-btn"
           onclick="fullscreenPlayer()" title="Fullscreen" style="display:flex">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -360,6 +350,8 @@ function loadPlayer(index) {
       <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
     </svg>
   </button>`;
+  // Once the iframe is in place, fade the modal-close like a video control overlay.
+  document.querySelector('.modal-close')?.classList.add('auto-hide');
   showFsBtn(); // show briefly when player loads, then auto-hides after 3s
 }
 
@@ -398,6 +390,7 @@ function toggleWishlist() {
 function closeModal(e) {
   if (e && e.target !== document.getElementById('modal-overlay')) return;
   document.getElementById('modal-overlay').classList.remove('open');
+  document.querySelector('.modal-close')?.classList.remove('auto-hide', 'visible');
   resetPlayer();
   currentMovie   = null;
   currentPlayers = [];
@@ -449,22 +442,25 @@ function resetPlayer(msg) {
     </button>`;
 }
 
-/* ---- Fullscreen button idle-show/hide ---- */
+/* ---- Fullscreen + close button idle-show/hide ---- */
 let _fsIdleTimer = null;
 
 function showFsBtn() {
-  const btn = document.getElementById('player-fullscreen-btn');
-  if (!btn || btn.style.display !== 'flex') return;
-  btn.classList.add('visible');
+  const btn   = document.getElementById('player-fullscreen-btn');
+  const close = document.querySelector('.modal-close');
+  if (btn && btn.style.display === 'flex') btn.classList.add('visible');
+  if (close && close.classList.contains('auto-hide')) close.classList.add('visible');
   clearTimeout(_fsIdleTimer);
   _fsIdleTimer = setTimeout(() => {
-    const b = document.getElementById('player-fullscreen-btn');
-    if (b) b.classList.remove('visible');
+    document.getElementById('player-fullscreen-btn')?.classList.remove('visible');
+    document.querySelector('.modal-close')?.classList.remove('visible');
   }, 3000);
 }
 
-// Show on mouse move over the player area
-document.getElementById('player-wrap').addEventListener('mousemove', showFsBtn);
+// Show on any user activity inside the modal (mousemove for desktop, touchstart for mobile)
+const _modal = document.getElementById('modal');
+_modal?.addEventListener('mousemove', showFsBtn);
+_modal?.addEventListener('touchstart', showFsBtn, { passive: true });
 // Show on any keypress (useful in fullscreen where mouse events are inside iframe)
 document.addEventListener('keydown', showFsBtn);
 

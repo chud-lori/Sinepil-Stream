@@ -224,10 +224,11 @@ nav {
 .card-img-wrap {
   width: 100%;
   aspect-ratio: 2/3;
-  background: linear-gradient(90deg, var(--surface) 25%, var(--border) 50%, var(--surface) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  background: linear-gradient(100deg, #1f1f2c 30%, #383850 50%, #1f1f2c 70%);
+  background-size: 250% 100%;
+  animation: shimmer 1.6s linear infinite;
   overflow: hidden;
+  position: relative;
 }
 .card-img-wrap.loaded {
   background: var(--card);
@@ -240,10 +241,12 @@ nav {
   object-fit: cover;
   display: block;
   opacity: 0;
-  transition: opacity 0.2s;
+  visibility: hidden; /* belt + suspenders: hide any browser-default broken/alt rendering */
+  transition: opacity 0.25s;
 }
 .card-img.loaded {
   opacity: 1;
+  visibility: visible;
 }
 
 /* ---- Skeleton cards (grid loading state) ---- */
@@ -255,9 +258,9 @@ nav {
   height: 13px;
   border-radius: 4px;
   margin-bottom: 7px;
-  background: linear-gradient(90deg, var(--surface) 25%, var(--border) 50%, var(--surface) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  background: linear-gradient(100deg, #1f1f2c 30%, #383850 50%, #1f1f2c 70%);
+  background-size: 250% 100%;
+  animation: shimmer 1.6s linear infinite;
 }
 .skeleton-line--short {
   width: 55%;
@@ -375,7 +378,11 @@ nav {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: opacity 0.25s;
 }
+/* Once a player iframe is loaded, .auto-hide is added; controls fade unless 'visible' */
+.modal-close.auto-hide { opacity: 0; pointer-events: none; }
+.modal-close.auto-hide.visible { opacity: 1; pointer-events: auto; }
 
 .modal-close:hover { background: var(--accent); }
 
