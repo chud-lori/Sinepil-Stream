@@ -128,8 +128,11 @@ nav {
   background-size: 12px;
 }
 
-.filter-select:hover  { border-color: var(--border-strong, #3a3a4e); }
-.filter-select:focus  { border-color: var(--accent); }
+.filter-select:hover { border-color: var(--border-strong, #3a3a4e); }
+/* :focus-visible only paints when the user reached this control via keyboard.
+   Mouse clicks that leave focus on the <select> no longer show a red ring. */
+.filter-select:focus { outline: none; }
+.filter-select:focus-visible { border-color: var(--accent); outline: none; }
 /* Hide the native dropdown arrow on IE/Edge legacy */
 .filter-select::-ms-expand { display: none; }
 
