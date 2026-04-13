@@ -47,16 +47,29 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_movies_year  ON movies(year);
 `);
 
+// Add rating_fetched_at — records when we last attempted to fetch the rating
+// from the movie detail page. Lets us skip re-fetching movies whose source
+// genuinely has no rating (saves N+1 HTTP cost on every browse).
+try { db.exec(`ALTER TABLE movies ADD COLUMN rating_fetched_at INTEGER DEFAULT 0`); } catch (_) {}
+
 const _upsert = db.prepare(`
   INSERT INTO movies (slug, title, poster, rating, year, genre, indexed_at)
   VALUES (@slug, @title, @poster, @rating, @year, @genre, strftime('%s','now'))
   ON CONFLICT(slug) DO UPDATE SET
     title      = excluded.title,
     poster     = excluded.poster,
-    rating     = excluded.rating,
+    -- Only overwrite rating if the new scrape provides one; otherwise keep
+    -- whatever we previously cached (e.g. fetched from the detail page).
+    rating     = CASE WHEN excluded.rating != '' THEN excluded.rating ELSE movies.rating END,
     year       = excluded.year,
     genre      = excluded.genre,
     indexed_at = excluded.indexed_at
+`);
+const _setRating = db.prepare(`
+  UPDATE movies SET rating = @rating, rating_fetched_at = strftime('%s','now') WHERE slug = @slug
+`);
+const _getCachedRatings = db.prepare(`
+  SELECT slug, rating, rating_fetched_at FROM movies WHERE slug IN (SELECT value FROM json_each(?))
 `);
 
 const _delete     = db.prepare('DELETE FROM movies WHERE slug = ?');
@@ -419,12 +432,79 @@ function slugFromSourceUrl(url) {
 
 
 
+// Lightweight rating fetch: pulls only the JSON-LD aggregateRating from a
+// movie's detail page (skips player resolution, JSON-LD parsing for cast etc).
+async function getRating(slug) {
+  try {
+    const $ = await get(`${BASE}/${slug}/`);
+    const ld = parseJsonLd($);
+    const v = ld.aggregateRating?.ratingValue;
+    return v != null ? String(v) : '';
+  } catch {
+    return '';
+  }
+}
+
+// Promise.all with concurrency cap — fetches finish in parallel up to `limit` at a time.
+async function pMap(items, mapper, limit = 8) {
+  const out = new Array(items.length);
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const idx = i++;
+      if (idx >= items.length) return;
+      try { out[idx] = await mapper(items[idx], idx); }
+      catch { out[idx] = null; }
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+// Don't re-fetch a slug whose rating we've attempted within this window.
+const RATING_TTL_DAYS = 14;
+
 async function browse(path = '') {
   const url = path ? `${BASE}/${path}/`.replace(/\/\/$/, '/') : BASE;
   const $ = await get(url);
   const movies = extractCards($);
   indexMovies(movies); // add to search index as a side-effect
+
+  // Enrich missing ratings: cache lookup → fetch detail page → persist.
+  await enrichMissingRatings(movies);
+
   return movies;
+}
+
+async function enrichMissingRatings(movies) {
+  const missing = movies.filter(m => !m.rating);
+  if (missing.length === 0) return;
+
+  // 1. Fill from DB cache where available.
+  const slugsJson = JSON.stringify(missing.map(m => m.slug));
+  const cached = _getCachedRatings.all(slugsJson);
+  const cacheBySlug = new Map(cached.map(r => [r.slug, r]));
+  const ttlCutoff = Math.floor(Date.now() / 1000) - RATING_TTL_DAYS * 86400;
+
+  const stillMissing = [];
+  for (const m of missing) {
+    const c = cacheBySlug.get(m.slug);
+    if (c?.rating) {
+      m.rating = c.rating;
+    } else if (c && c.rating_fetched_at > ttlCutoff) {
+      // Already attempted recently and source had nothing — skip refetching.
+    } else {
+      stillMissing.push(m);
+    }
+  }
+  if (stillMissing.length === 0) return;
+
+  // 2. Parallel fetch detail pages for uncached missing ratings.
+  await pMap(stillMissing, async (m) => {
+    const rating = await getRating(m.slug);
+    m.rating = rating;
+    _setRating.run({ slug: m.slug, rating });
+  }, 8);
 }
 
 module.exports = { getMovie, search, browse, slugFromSourceUrl };

@@ -6,7 +6,22 @@ const scraper = require('./scraper');
 
 const app = express();
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+// Force browsers to revalidate static assets (CSS/JS/HTML) on every request.
+// Without this, Chrome's heuristic cache silently serves stale files for hours
+// after a deploy — UI changes appear "broken" until the user hard-refreshes.
+// ETag/Last-Modified still apply, so unchanged files return 304 (cheap).
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    if (/\.(html|css|js)$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache');
+    } else {
+      // Images, fonts, favicons — safe to cache for a day.
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+    }
+  },
+}));
 
 const LK21_ORIGIN = 'https://tv10.lk21official.cc';
 const BROWSER_UA  = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
