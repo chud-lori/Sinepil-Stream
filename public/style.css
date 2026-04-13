@@ -398,7 +398,7 @@ nav {
 .player-fullscreen-btn {
   position: absolute;
   top: 8px;
-  right: 8px;
+  right: 52px; /* sit left of .modal-close (right:14 + 34 + gap) */
   z-index: 10;
   background: rgba(0,0,0,0.6);
   border: none;
@@ -434,6 +434,7 @@ nav {
 .player-wrap:-webkit-full-screen .player-fullscreen-btn {
   opacity: 1;
   background: rgba(0,0,0,0.75);
+  right: 8px; /* close button isn't visible in fullscreen, reclaim corner */
 }
 
 .player-fullscreen-btn svg {
@@ -720,6 +721,7 @@ nav {
   .modal-overlay { padding: 0; align-items: flex-start; }
   .modal { border-radius: 0; min-height: 100svh; min-height: 100vh; }
   .modal-close { top: 8px; right: 8px; }
+  .player-fullscreen-btn { right: 46px; } /* clear .modal-close at right:8 + 34 + gap */
   .player-tabs { padding: 8px 10px; gap: 3px; }
   .ptab { padding: 5px 10px; font-size: 11px; }
   .modal-info { flex-direction: column; padding: 14px; gap: 14px; }
