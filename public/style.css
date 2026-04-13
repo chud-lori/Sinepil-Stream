@@ -115,12 +115,23 @@ nav {
   border-radius: 6px;
   color: var(--text);
   font-size: 13px;
-  padding: 6px 12px;
+  padding: 6px 32px 6px 12px; /* room for custom chevron on the right */
   cursor: pointer;
   outline: none;
+  /* Replace the native arrow with a custom SVG so we control its position */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a0a0b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
 }
 
-.filter-select:focus { border-color: var(--accent); }
+.filter-select:hover  { border-color: var(--border-strong, #3a3a4e); }
+.filter-select:focus  { border-color: var(--accent); }
+/* Hide the native dropdown arrow on IE/Edge legacy */
+.filter-select::-ms-expand { display: none; }
 
 /* ---- WATCH BY URL BAR ---- */
 #url-bar {
