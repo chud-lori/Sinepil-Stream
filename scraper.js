@@ -137,6 +137,7 @@ function parseJsonLd($) {
 // Extract movie listing cards from article elements (series are excluded)
 function extractCards($) {
   const movies = [];
+  const seenSlugs = new Set(); // source repeats the same movie across hero carousel + main grid
 
   $('article').each((_, el) => {
     const $el = $(el);
@@ -158,6 +159,8 @@ function extractCards($) {
 
     const slug = href.replace(/^\//, '').replace(/\/$/, '');
     if (!slug) return;
+    if (seenSlugs.has(slug)) return;
+    seenSlugs.add(slug);
 
     // Tertiary: slugs that explicitly contain episode/season keywords
     if (SERIES_SLUG_RE.test(slug)) return;
