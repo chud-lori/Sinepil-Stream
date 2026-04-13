@@ -173,14 +173,17 @@ function cardHTML(m, opts = {}) {
     actions = `
       <div class="card-actions">
         <button class="card-btn" title="Remove"
-          onclick="event.stopPropagation();removeItem('${esc(opts.ctx || '')}','${esc(m.slug)}')">&#x2715;</button>
+          data-action="remove" data-ctx="${esc(opts.ctx || '')}" data-slug="${esc(m.slug)}">&#x2715;</button>
       </div>`;
   } else {
-    const mJson = esc(JSON.stringify(m));
+    // Use data-* attribute (HTML-safe for any character) to carry the movie JSON.
+    // Embedding JSON in onclick="…" breaks for titles containing apostrophes
+    // because esc() turns ' into &#x27; which the browser decodes back to ' BEFORE
+    // the JS parser sees it, terminating the string literal early.
     actions = `
       <div class="card-actions">
         <button class="card-btn${Wishlist.has(m.slug) ? ' active' : ''}" title="Wishlist"
-          onclick="event.stopPropagation();quickWishlist(this,'${mJson}')">&#9825;</button>
+          data-action="wishlist" data-movie="${esc(JSON.stringify(m))}">&#9825;</button>
       </div>`;
   }
 
@@ -197,7 +200,23 @@ function cardHTML(m, opts = {}) {
 
 function attachCardEvents(grid) {
   grid.querySelectorAll('.card').forEach(card => {
-    card.addEventListener('click', () => openMovie(card.dataset.slug));
+    card.addEventListener('click', (e) => {
+      // Action buttons inside the card carry data-action; let them handle the click
+      // and DON'T open the modal in that case.
+      const btn = e.target.closest('[data-action]');
+      if (btn) {
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        if (action === 'wishlist') {
+          try { quickWishlist(btn, JSON.parse(btn.dataset.movie)); }
+          catch (err) { console.error('wishlist parse error', err); }
+        } else if (action === 'remove') {
+          removeItem(btn.dataset.ctx, btn.dataset.slug);
+        }
+        return;
+      }
+      openMovie(card.dataset.slug);
+    });
   });
 }
 
@@ -208,9 +227,12 @@ function removeItem(ctx, slug) {
 }
 
 /* ---- Quick wishlist toggle from card ---- */
-function quickWishlist(btn, movieJson) {
-  let movie;
-  try { movie = JSON.parse(movieJson); } catch { return; }
+function quickWishlist(btn, movie) {
+  // Accept either a parsed object (new code path) or a JSON string (legacy callers).
+  if (typeof movie === 'string') {
+    try { movie = JSON.parse(movie); } catch { return; }
+  }
+  if (!movie?.slug) return;
   const added = Wishlist.toggle(movie);
   btn.classList.toggle('active', added);
   toast(added ? `Added "${movie.title}" to wishlist` : 'Removed from wishlist');
