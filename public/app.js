@@ -342,7 +342,7 @@ function loadPlayer(index) {
   // the popunder window.open these providers fire on click. Verified against
   // CAST/f16px.com (3/3 runs blocked); CAST and TURBOVIP still load normally
   // (unlike with `sandbox`, which providers detect and reject).
-  const inner = `<!doctype html><html><body style="margin:0">
+  const inner = `<!doctype html><html style="height:100%"><body style="margin:0;height:100%;background:#000">
 <iframe src="${esc(playerUrl)}" allowfullscreen
   allow="autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write"
   referrerpolicy="no-referrer"
