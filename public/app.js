@@ -53,8 +53,9 @@ let descExpanded   = false;
 function showTab(name) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-  document.getElementById('sec-' + name).classList.add('active');
-  document.getElementById('tab-' + name).classList.add('active');
+  document.getElementById('sec-' + name)?.classList.add('active');
+  // 'search' has no nav-tab anymore — typing in the bar drives navigation directly.
+  document.getElementById('tab-' + name)?.classList.add('active');
   document.getElementById('browse-bar').style.display = (name === 'browse') ? 'flex' : 'none';
   if (name === 'history')  renderHistory();
   if (name === 'wishlist') renderWishlist();

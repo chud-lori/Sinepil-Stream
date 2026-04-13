@@ -67,14 +67,27 @@ nav {
 }
 
 .search-wrap button {
-  background: none;
-  border: none;
-  color: var(--muted);
+  background: var(--card);
+  border: 1px solid transparent;
+  color: var(--text);
   cursor: pointer;
   font-size: 16px;
-  padding: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
   display: flex;
   align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.search-wrap button:hover {
+  background: var(--accent);
+  color: #fff;
+}
+.search-wrap button:active { transform: scale(0.96); }
+/* Hide the WebKit "x" clear button so our search button is the only action */
+.search-wrap input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none; appearance: none;
 }
 
 .nav-tabs {

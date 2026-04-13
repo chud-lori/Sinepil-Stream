@@ -45,18 +45,18 @@
   <div class="nav-logo" onclick="showTab('browse')">&#9654; SinepilStream</div>
 
   <div class="search-wrap">
-    <button onclick="doSearch()" title="Search">
+    <input id="search-input" type="search" placeholder="Search movies…"
+      enterkeyhint="search" autocomplete="off"
+      onkeydown="if(event.key==='Enter') doSearch()" />
+    <button onclick="doSearch()" title="Search" aria-label="Search" class="search-btn">
       <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="8.5" cy="8.5" r="5.5"/><line x1="13" y1="13" x2="18" y2="18"/>
       </svg>
     </button>
-    <input id="search-input" type="text" placeholder="Search movies…"
-      onkeydown="if(event.key==='Enter') doSearch()" />
   </div>
 
   <div class="nav-tabs">
     <button class="nav-tab active" id="tab-browse"   onclick="showTab('browse')">Browse</button>
-    <button class="nav-tab"        id="tab-search"   onclick="showTab('search')">Search</button>
     <button class="nav-tab"        id="tab-history"  onclick="showTab('history')">History</button>
     <button class="nav-tab"        id="tab-wishlist" onclick="showTab('wishlist')">Wishlist</button>
   </div>
