@@ -192,7 +192,9 @@
     <!-- Info -->
     <div class="modal-info">
       <div class="modal-poster">
-        <img id="modal-poster" src="" alt="" loading="lazy" />
+        <!-- No loading="lazy": modals open via display toggle; lazy observer
+             often skips them, leaving the image unloaded. -->
+        <img id="modal-poster" alt="" />
       </div>
       <div class="modal-details">
         <h2 class="modal-title" id="modal-title"></h2>

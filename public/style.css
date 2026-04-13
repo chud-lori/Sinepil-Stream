@@ -553,10 +553,12 @@ nav {
   border-radius: 8px;
   overflow: hidden;
   align-self: flex-start;
-  /* Shimmer lives on the container so it shows while the img is transparent */
-  background: linear-gradient(90deg, var(--card) 25%, var(--border) 50%, var(--card) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s ease-in-out infinite;
+  /* Shimmer lives on the container so it shows while the img is transparent.
+     Same brighter contrast as .card-img-wrap so the loading state is clearly
+     visible (the old dim card→border gradient looked like a static dark block). */
+  background: linear-gradient(100deg, #1f1f2c 30%, #383850 50%, #1f1f2c 70%);
+  background-size: 250% 100%;
+  animation: shimmer 1.6s linear infinite;
 }
 /* Stop shimmer once the image is actually loaded */
 .modal-poster:has(img.loaded) {
@@ -571,10 +573,12 @@ nav {
   object-fit: cover;
   /* Hide img (and any broken-image icon) until fully loaded */
   opacity: 0;
-  transition: opacity 0.2s;
+  visibility: hidden;
+  transition: opacity 0.25s;
 }
 .modal-poster img.loaded {
   opacity: 1;
+  visibility: visible;
 }
 
 .modal-details { flex: 1; min-width: 0; }

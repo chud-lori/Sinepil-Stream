@@ -157,6 +157,9 @@ function renderWishlist() {
 
 /* ---- Card HTML ---- */
 function cardHTML(m, opts = {}) {
+  // onload handler also covers the cached/synchronous-load case; we re-check in
+  // attachCardEvents below using `complete && naturalWidth` for any image whose
+  // load event already fired before the inline handler was wired up.
   const poster = m.poster
     ? `<div class="card-img-wrap">
          <img class="card-img" src="${esc(m.poster)}" alt="${esc(m.title)}" loading="lazy"
@@ -199,6 +202,16 @@ function cardHTML(m, opts = {}) {
 }
 
 function attachCardEvents(grid) {
+  // Safety net: if an image was already in the browser cache, its `load` event
+  // may have fired before the inline onload handler attached → opacity stays 0
+  // and the card looks "broken". Sweep cached images and mark them loaded.
+  grid.querySelectorAll('img.card-img').forEach(img => {
+    if (img.complete && img.naturalWidth > 0) {
+      img.classList.add('loaded');
+      img.parentElement?.classList.add('loaded');
+    }
+  });
+
   grid.querySelectorAll('.card').forEach(card => {
     card.addEventListener('click', (e) => {
       // Action buttons inside the card carry data-action; let them handle the click
@@ -255,7 +268,12 @@ async function openMovie(slug, { pushHistory = true } = {}) {
   document.getElementById('modal-meta').innerHTML    = '';
   document.getElementById('modal-desc').textContent  = '';
   document.getElementById('modal-cast').innerHTML    = '';
-  document.getElementById('modal-poster').src        = '';
+  // Don't clear with `src=''` — Chromium fires an `error` event that
+  // prematurely marks the wrap as 'loaded'. Just drop the loaded class so the
+  // shimmer kicks in again; renderModal will set the new src.
+  const _mp = document.getElementById('modal-poster');
+  _mp.classList.remove('loaded');
+  _mp.removeAttribute('src');
   document.getElementById('read-more-btn').style.display = 'none';
 
   try {
@@ -298,12 +316,24 @@ async function openMovie(slug, { pushHistory = true } = {}) {
 
 function renderModal(data) {
   const posterEl = document.getElementById('modal-poster');
-  // Remove 'loaded' first — CSS makes the img opacity:0 so no broken-icon flash.
-  // The shimmer animates on the parent container until the image is ready.
+  // Wire handlers BEFORE setting src so we never miss a synchronous fire.
   posterEl.classList.remove('loaded');
   posterEl.onload  = () => posterEl.classList.add('loaded');
   posterEl.onerror = () => posterEl.classList.add('loaded'); // hide shimmer even on error
-  posterEl.src = data.poster || '';
+  const url = data.poster || '';
+  if (url) {
+    posterEl.src = url;
+    // Edge case: setting src to a value that's already loaded (cached or
+    // identical to the previous src) doesn't fire a 'load' event in any
+    // browser. Detect that and mark loaded ourselves so the image becomes
+    // visible instead of staying at opacity:0 forever.
+    if (posterEl.complete && posterEl.naturalWidth > 0) {
+      posterEl.classList.add('loaded');
+    }
+  } else {
+    posterEl.removeAttribute('src');
+    posterEl.classList.add('loaded'); // no poster → just stop the shimmer
+  }
 
   document.getElementById('modal-title').textContent = data.title || 'Unknown';
 
