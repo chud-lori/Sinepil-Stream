@@ -378,6 +378,8 @@ function renderModal(data) {
 }
 
 /* ---- Load player (finalUrl pre-resolved during movie scrape — instant) ---- */
+let playerLoadTimer = null;
+
 function loadPlayer(index) {
   const p = currentPlayers[index];
   if (!p) return;
@@ -395,6 +397,7 @@ function loadPlayer(index) {
   }
 
   wrap.innerHTML = `<iframe
+    id="player-iframe"
     src="${esc(playerUrl)}"
     allowfullscreen
     allow="autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write"
@@ -407,6 +410,23 @@ function loadPlayer(index) {
       <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
     </svg>
   </button>`;
+
+  // Detect network-level load failures: if the iframe never fires `load`
+  // within the timeout window, surface the "try next player" fallback.
+  // (Can't detect broken embed contents cross-origin — only total failure.)
+  if (playerLoadTimer) clearTimeout(playerLoadTimer);
+  const iframe = document.getElementById('player-iframe');
+  let loaded = false;
+  iframe?.addEventListener('load', () => {
+    loaded = true;
+    if (playerLoadTimer) { clearTimeout(playerLoadTimer); playerLoadTimer = null; }
+  }, { once: true });
+  playerLoadTimer = setTimeout(() => {
+    if (!loaded) {
+      wrap.innerHTML = playerErrorHTML('This player is taking too long to load', index);
+    }
+  }, 15000);
+
   // Once the iframe is in place, fade the modal-close like a video control overlay.
   document.querySelector('.modal-close')?.classList.add('auto-hide');
   showFsBtn(); // show briefly when player loads, then auto-hides after 3s
@@ -483,6 +503,7 @@ function nativeShare() {
 }
 
 function resetPlayer(msg) {
+  if (playerLoadTimer) { clearTimeout(playerLoadTimer); playerLoadTimer = null; }
   document.getElementById('player-wrap').innerHTML = `
     <div class="player-placeholder" id="player-placeholder">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="48" height="48">

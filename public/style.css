@@ -527,6 +527,29 @@ nav {
   flex-shrink: 0;
 }
 
+/* Player fallback hint — distinct blue tone from the amber ad-notice */
+.player-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  background: #0e1620;
+  border-bottom: 1px solid #1e3348;
+  color: #6b8fb0;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.player-hint button {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #6b8fb0;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
 /* Player tabs */
 .player-tabs {
   display: flex;
