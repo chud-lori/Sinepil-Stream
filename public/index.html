@@ -180,13 +180,13 @@
     <!-- Player selection tabs -->
     <div class="player-tabs" id="player-tabs"></div>
 
-    <!-- Ad notice -->
-    <div class="ad-notice" id="ad-notice">
-      &#9888; Players may show ads or open new tabs on click &mdash; use
+    <!-- Ad notice (class/id intentionally avoid "ad-" to evade adblock cosmetic filters) -->
+    <div class="popup-notice" id="popup-notice">
+      &#9888; Players may show promos or open new tabs on click &mdash; use
       <a href="https://brave.com" target="_blank" rel="noopener">Brave</a> or
       <a href="https://ublockorigin.com" target="_blank" rel="noopener">uBlock Origin</a>
-      for a fully ad-free experience.
-      <button onclick="document.getElementById('ad-notice').style.display='none'" aria-label="Dismiss">&#x2715;</button>
+      for a fully clean experience.
+      <button onclick="document.getElementById('popup-notice').style.display='none'" aria-label="Dismiss">&#x2715;</button>
     </div>
 
     <!-- Player fallback hint -->

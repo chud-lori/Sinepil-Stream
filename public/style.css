@@ -504,7 +504,7 @@ nav {
 .player-placeholder svg { width: 56px; height: 56px; opacity: 0.3; }
 
 /* Ad notice */
-.ad-notice {
+.popup-notice {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -515,8 +515,8 @@ nav {
   font-size: 12px;
   flex-wrap: wrap;
 }
-.ad-notice a { color: #f59e0b; text-underline-offset: 2px; }
-.ad-notice button {
+.popup-notice a { color: #f59e0b; text-underline-offset: 2px; }
+.popup-notice button {
   margin-left: auto;
   background: none;
   border: none;
