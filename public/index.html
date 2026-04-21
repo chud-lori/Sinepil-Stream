@@ -42,13 +42,12 @@
 
 <!-- NAV -->
 <nav>
-  <div class="nav-logo" onclick="showTab('browse')">&#9654; SinepilStream</div>
+  <div class="nav-logo" data-action="showTab" data-arg="browse">&#9654; SinepilStream</div>
 
   <div class="search-wrap">
     <input id="search-input" type="search" placeholder="Search movies…"
-      enterkeyhint="search" autocomplete="off"
-      onkeydown="if(event.key==='Enter') doSearch()" />
-    <button onclick="doSearch()" title="Search" aria-label="Search" class="search-btn">
+      enterkeyhint="search" autocomplete="off" />
+    <button data-action="doSearch" title="Search" aria-label="Search" class="search-btn">
       <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="8.5" cy="8.5" r="5.5"/><line x1="13" y1="13" x2="18" y2="18"/>
       </svg>
@@ -56,16 +55,16 @@
   </div>
 
   <div class="nav-tabs">
-    <button class="nav-tab active" id="tab-browse"   onclick="showTab('browse')">Movies</button>
-    <button class="nav-tab"        id="tab-series"   onclick="showTab('series')">Series</button>
-    <button class="nav-tab"        id="tab-history"  onclick="showTab('history')">History</button>
-    <button class="nav-tab"        id="tab-wishlist" onclick="showTab('wishlist')">Wishlist</button>
+    <button class="nav-tab active" id="tab-browse"   data-action="showTab" data-arg="browse">Movies</button>
+    <button class="nav-tab"        id="tab-series"   data-action="showTab" data-arg="series">Series</button>
+    <button class="nav-tab"        id="tab-history"  data-action="showTab" data-arg="history">History</button>
+    <button class="nav-tab"        id="tab-wishlist" data-action="showTab" data-arg="wishlist">Wishlist</button>
   </div>
 </nav>
 
 <!-- BROWSE FILTERS -->
 <div id="browse-bar">
-  <select class="filter-select" id="filter-genre" onchange="applyFilter()">
+  <select class="filter-select" id="filter-genre" data-action="applyFilter">
     <option value="">All Genres</option>
     <option value="genre/action">Action</option>
     <option value="genre/adventure">Adventure</option>
@@ -85,7 +84,7 @@
     <option value="genre/war">War</option>
   </select>
 
-  <select class="filter-select" id="filter-country" onchange="applyFilter()">
+  <select class="filter-select" id="filter-country" data-action="applyFilter">
     <option value="">All Countries</option>
     <option value="country/usa">USA</option>
     <option value="country/korea">Korea</option>
@@ -98,7 +97,7 @@
     <option value="country/indonesia">Indonesia</option>
   </select>
 
-  <select class="filter-select" id="filter-year" onchange="applyFilter()">
+  <select class="filter-select" id="filter-year" data-action="applyFilter">
     <option value="">All Years</option>
     <option value="year/2026">2026</option>
     <option value="year/2025">2025</option>
@@ -118,24 +117,48 @@
 <!-- WATCH BY URL -->
 <div id="url-bar">
   <span class="url-bar-label">&#128279; Watch by URL:</span>
-  <input id="url-input" type="url" placeholder="Paste a lk21 or nontondrama link here to watch without ads…"
-    onkeydown="if(event.key==='Enter') watchByUrl()" />
-  <button onclick="watchByUrl()">Watch</button>
+  <input id="url-input" type="url" placeholder="Paste a lk21 or nontondrama link here to watch without ads…" />
+  <button data-action="watchByUrl">Watch</button>
 </div>
 
 <!-- SECTIONS -->
 <div id="sec-browse" class="section active">
-  <div class="section-header">
-    <span class="section-title" id="browse-title">Latest Movies</span>
+  <!-- Recently Watched rail — hidden when there is no movie history -->
+  <div id="continue-watching" class="home-rail" style="display:none">
+    <div class="section-header">
+      <span class="section-title">Recently Watched</span>
+    </div>
+    <div id="continue-watching-grid" class="rail-scroll"></div>
   </div>
-  <div id="browse-grid" class="grid grid-lg"></div>
+
+  <!-- Home rails (Latest / Action / Drama / ...) shown when no filter applied -->
+  <div id="home-rails"></div>
+
+  <!-- Flat grid used only when a filter is active -->
+  <div id="browse-filtered" style="display:none">
+    <div class="section-header">
+      <span class="section-title" id="browse-title">Latest Movies</span>
+    </div>
+    <div id="browse-grid" class="grid grid-lg"></div>
+  </div>
 </div>
 
 <div id="sec-series" class="section">
-  <div class="section-header">
-    <span class="section-title" id="series-title">Latest Series</span>
+  <!-- Recently Watched (series only) -->
+  <div id="continue-watching-series" class="home-rail" style="display:none">
+    <div class="section-header">
+      <span class="section-title">Recently Watched</span>
+    </div>
+    <div id="continue-watching-series-grid" class="rail-scroll"></div>
   </div>
-  <div id="series-grid" class="grid grid-lg"></div>
+
+  <div id="series-rails"></div>
+  <div id="series-filtered" style="display:none">
+    <div class="section-header">
+      <span class="section-title" id="series-title">Latest Series</span>
+    </div>
+    <div id="series-grid" class="grid grid-lg"></div>
+  </div>
 </div>
 
 <div id="sec-search" class="section">
@@ -149,7 +172,7 @@
 <div id="sec-history" class="section">
   <div class="section-header">
     <span class="section-title">Watch History</span>
-    <button class="btn btn-outline" style="font-size:12px;padding:5px 12px;" onclick="clearHistory()">Clear All</button>
+    <button class="btn btn-outline" style="font-size:12px;padding:5px 12px;" data-action="clearHistory">Clear All</button>
   </div>
   <div id="history-grid" class="grid grid-lg"></div>
 </div>
@@ -163,9 +186,9 @@
 </div>
 
 <!-- MOVIE MODAL -->
-<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+<div class="modal-overlay" id="modal-overlay" data-action="closeModalOverlay">
   <div class="modal" id="modal">
-    <button class="modal-close" onclick="closeModal()">&#x2715;</button>
+    <button class="modal-close" data-action="closeModal">&#x2715;</button>
 
     <!-- Player -->
     <div class="player-wrap" id="player-wrap">
@@ -177,7 +200,7 @@
         <span>Select a player below to start watching</span>
       </div>
       <button class="player-fullscreen-btn" id="player-fullscreen-btn"
-              onclick="fullscreenPlayer()" title="Fullscreen">
+              data-action="fullscreenPlayer" title="Fullscreen">
         <svg viewBox="0 0 24 24">
           <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
           <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
@@ -189,8 +212,11 @@
     <div class="episode-picker" id="episode-picker" style="display:none">
       <div class="episode-picker-row">
         <label for="season-select" class="season-label">Season</label>
-        <select id="season-select" class="season-select" onchange="renderEpisodeList()"></select>
+        <select id="season-select" class="season-select"></select>
         <span class="episode-status" id="episode-status"></span>
+        <button id="next-episode-btn" class="btn-next-ep" onclick="loadNextEpisode()" style="display:none">
+          Next &rarr;
+        </button>
       </div>
       <div class="episode-list" id="episode-list"></div>
     </div>
@@ -204,13 +230,13 @@
       <a href="https://brave.com" target="_blank" rel="noopener">Brave</a> or
       <a href="https://ublockorigin.com" target="_blank" rel="noopener">uBlock Origin</a>
       for a fully clean experience.
-      <button onclick="document.getElementById('popup-notice').style.display='none'" aria-label="Dismiss">&#x2715;</button>
+      <button data-action="dismissNotice" data-target="popup-notice" aria-label="Dismiss">&#x2715;</button>
     </div>
 
     <!-- Player fallback hint -->
     <div class="player-hint" id="player-hint">
       &#8505; If the video doesn't load or playback fails, pick another player from the tabs above.
-      <button onclick="document.getElementById('player-hint').style.display='none'" aria-label="Dismiss">&#x2715;</button>
+      <button data-action="dismissNotice" data-target="player-hint" aria-label="Dismiss">&#x2715;</button>
     </div>
 
     <!-- Info -->
@@ -224,22 +250,22 @@
         <h2 class="modal-title" id="modal-title"></h2>
         <div class="modal-meta" id="modal-meta"></div>
         <p class="modal-desc" id="modal-desc"></p>
-        <button class="read-more" id="read-more-btn" onclick="toggleDesc()">Read more</button>
+        <button class="read-more" id="read-more-btn" data-action="toggleDesc">Read more</button>
         <div class="modal-cast" id="modal-cast"></div>
       </div>
     </div>
 
     <div class="modal-footer">
-      <button class="btn btn-outline btn-wishlist" id="btn-wishlist" onclick="toggleWishlist()">
+      <button class="btn btn-outline btn-wishlist" id="btn-wishlist" data-action="toggleWishlist">
         &#9825; Wishlist
       </button>
-      <button class="btn btn-outline" id="btn-copy-link" onclick="copyMovieLink()">
+      <button class="btn btn-outline" id="btn-copy-link" data-action="copyMovieLink">
         <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="7" y="7" width="10" height="12" rx="2"/><path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>
         </svg>
         Copy link
       </button>
-      <button class="btn btn-outline" id="btn-share-native" onclick="nativeShare()" style="display:none">
+      <button class="btn btn-outline" id="btn-share-native" data-action="nativeShare" style="display:none">
         <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="15" cy="4" r="2"/><circle cx="15" cy="16" r="2"/><circle cx="4" cy="10" r="2"/>
           <line x1="6" y1="11" x2="13" y2="15"/><line x1="13" y1="5" x2="6" y2="9"/>

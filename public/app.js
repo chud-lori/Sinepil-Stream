@@ -74,11 +74,13 @@ function showTab(name) {
   // 'search' has no nav-tab anymore — typing in the bar drives navigation directly.
   document.getElementById('tab-' + name)?.classList.add('active');
   document.getElementById('browse-bar').style.display = (name === 'browse') ? 'flex' : 'none';
+  if (name === 'browse')   renderContinueWatching('movie');
+  if (name === 'series')   renderContinueWatching('series');
   if (name === 'history')  renderHistory();
   if (name === 'wishlist') renderWishlist();
-  if (name === 'series' && !document.getElementById('series-grid').dataset.loaded) {
-    loadGrid('series-grid', '/api/browse/series');
-    document.getElementById('series-grid').dataset.loaded = '1';
+  if (name === 'series' && !document.getElementById('series-rails').dataset.loaded) {
+    loadHomeRails('series-rails', 'series');
+    document.getElementById('series-rails').dataset.loaded = '1';
   }
   updateTabChrome(name);
 }
@@ -107,15 +109,28 @@ function updateTabChrome(name) {
   }
 }
 
-/* ---- Browse / Filter ---- */
+/* ---- Browse / Filter ----
+   No filter → show the home rails (Latest / Action / Drama / ...).
+   Any filter → hide rails, show a single flat grid for that filter. */
 function applyFilter() {
   const genre   = document.getElementById('filter-genre').value;
   const country = document.getElementById('filter-country').value;
   const year    = document.getElementById('filter-year').value;
   const path    = genre || country || year || '';
-  const label   = path
-    ? path.split('/').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
-    : 'Latest Movies';
+
+  const railsEl    = document.getElementById('home-rails');
+  const filteredEl = document.getElementById('browse-filtered');
+
+  if (!path) {
+    railsEl.style.display = '';
+    filteredEl.style.display = 'none';
+    loadHomeRails('home-rails', 'movie');
+    return;
+  }
+
+  railsEl.style.display = 'none';
+  filteredEl.style.display = '';
+  const label = path.split('/').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
   document.getElementById('browse-title').textContent = label;
   loadGrid('browse-grid', `/api/browse?path=${encodeURIComponent(path)}`);
 }
@@ -157,6 +172,49 @@ const SKELETON_CARD = `
     </div>
   </div>`;
 
+/* ---- Home rails (Phase 6): stacked horizontal-scroll rows ---- */
+const RAIL_SKELETON_COUNT = 6;
+
+function railSkeletonHTML(title) {
+  const cards = Array(RAIL_SKELETON_COUNT).fill(SKELETON_CARD).join('');
+  return `
+    <div class="home-rail">
+      <div class="section-header">
+        <span class="section-title">${esc(title)}</span>
+      </div>
+      <div class="rail-scroll">${cards}</div>
+    </div>`;
+}
+
+async function loadHomeRails(containerId, kind) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  // Show placeholder rails immediately so the layout doesn't jump in.
+  el.innerHTML = ['Latest', 'Action', 'Drama', 'Released 2026']
+    .map(railSkeletonHTML).join('');
+
+  try {
+    const res   = await fetch(`/api/home?kind=${encodeURIComponent(kind)}`);
+    const rails = await res.json();
+    if (!Array.isArray(rails) || rails.length === 0) {
+      el.innerHTML = emptyHTML('Nothing to show yet — try a genre filter.');
+      return;
+    }
+    el.innerHTML = rails.map(rail => `
+      <div class="home-rail" data-rail-id="${esc(rail.id)}">
+        <div class="section-header">
+          <span class="section-title">${esc(rail.title)}</span>
+        </div>
+        <div class="rail-scroll">${rail.items.map(m => cardHTML(m)).join('')}</div>
+      </div>
+    `).join('');
+    el.querySelectorAll('.rail-scroll').forEach(attachCardEvents);
+  } catch (e) {
+    el.innerHTML = emptyHTML('Failed to load home: ' + e.message);
+  }
+}
+
 /* ---- Generic grid loader ---- */
 async function loadGrid(gridId, apiUrl, badgeId) {
   const grid = document.getElementById(gridId);
@@ -186,10 +244,33 @@ function renderHistory() {
   attachCardEvents(grid, 'history');
 }
 
+/* ---- Recently Watched rail (filtered by kind to match the active tab) ---- */
+const RECENTLY_WATCHED_MAX = 12;
+function renderContinueWatching(kind = 'movie') {
+  // Each tab has its own rail; we render into the one matching `kind`.
+  const wrapId = kind === 'series' ? 'continue-watching-series' : 'continue-watching';
+  const gridId = wrapId + '-grid';
+  const wrap = document.getElementById(wrapId);
+  const grid = document.getElementById(gridId);
+  if (!wrap || !grid) return;
+
+  const items = History.all()
+    .filter(m => (m.kind || 'movie') === kind)
+    .slice(0, RECENTLY_WATCHED_MAX);
+
+  if (items.length === 0) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  // Every card here is watched by definition — hide the tick to avoid noise.
+  grid.innerHTML = items.map(m => cardHTML(m, { hideWatchedBadge: true })).join('');
+  attachCardEvents(grid);
+}
+
 async function clearHistory() {
   if (!confirm('Clear all watch history?')) return;
   History.clear();
   renderHistory();
+  renderContinueWatching('movie');
+  renderContinueWatching('series');
   toast('History cleared');
 }
 
@@ -207,21 +288,34 @@ function renderWishlist() {
 
 /* ---- Card HTML ---- */
 function cardHTML(m, opts = {}) {
-  // onload handler also covers the cached/synchronous-load case; we re-check in
-  // attachCardEvents below using `complete && naturalWidth` for any image whose
-  // load event already fired before the inline handler was wired up.
+  const kind = m.kind === 'series' ? 'series' : 'movie';
+  // Source gives us `total_seasons` + `total_episodes` where `total_episodes`
+  // is actually "latest episode in the latest season" — misleading for
+  // multi-season shows. Prefer the seasons count when > 1.
+  const kindBadge = kind === 'series'
+    ? `<span class="card-kind">${
+        m.total_seasons > 1
+          ? `${m.total_seasons} SEASONS`
+          : m.total_episodes
+            ? `EPS ${m.total_episodes}`
+            : 'SERIES'
+      }</span>`
+    : '';
+  const watchedBadge = (!opts.hideWatchedBadge && History.has(m.slug))
+    ? '<span class="card-watched" title="Watched">&#10003;</span>' : '';
+  // load / error listeners wired up in attachCardEvents — inline event
+  // handlers would violate our CSP (script-src-attr 'none').
+  // Watched badge nests inside the image wrapper so it sits on the poster,
+  // not under the card title block.
   const poster = m.poster
     ? `<div class="card-img-wrap">
-         <img class="card-img" src="${esc(m.poster)}" alt="${esc(m.title)}" loading="lazy"
-           onload="this.classList.add('loaded');this.parentElement.classList.add('loaded')"
-           onerror="this.parentElement.style.display='none';this.parentElement.nextElementSibling.style.display='flex'">
+         <img class="card-img" src="${esc(m.poster)}" alt="${esc(m.title)}" loading="lazy">
+         ${watchedBadge}
        </div>`
     : '';
   const placeholder = `<div class="card-img-placeholder" ${m.poster ? 'style="display:none"' : ''}>&#127916;</div>`;
-  const kind = m.kind === 'series' ? 'series' : 'movie';
-  const kindBadge = kind === 'series'
-    ? `<span class="card-kind">${m.total_episodes ? `EPS ${m.total_episodes}` : 'SERIES'}</span>`
-    : '';
+  // Fallback: no poster → render badge directly on the card
+  const looseBadge = !m.poster ? watchedBadge : '';
   const stars = m.rating ? `<span class="card-rating">&#9733; ${m.rating}</span>` : '';
   const year  = m.year   ? `<span class="card-year">${m.year}</span>` : '';
 
@@ -249,6 +343,7 @@ function cardHTML(m, opts = {}) {
     <div class="card" data-slug="${esc(m.slug)}" data-kind="${esc(kind)}">
       ${poster}${placeholder}
       ${kindBadge}
+      ${looseBadge}
       ${actions}
       <div class="card-body">
         <div class="card-title">${esc(m.title)}</div>
@@ -258,13 +353,24 @@ function cardHTML(m, opts = {}) {
 }
 
 function attachCardEvents(grid) {
-  // Safety net: if an image was already in the browser cache, its `load` event
-  // may have fired before the inline onload handler attached → opacity stays 0
-  // and the card looks "broken". Sweep cached images and mark them loaded.
+  // Wire up load / error handlers on each freshly-rendered image and also
+  // handle the cached case (load event fired before the listener attached →
+  // we detect with `complete && naturalWidth`).
   grid.querySelectorAll('img.card-img').forEach(img => {
-    if (img.complete && img.naturalWidth > 0) {
+    const markLoaded = () => {
       img.classList.add('loaded');
       img.parentElement?.classList.add('loaded');
+    };
+    const markError = () => {
+      const wrap = img.parentElement;
+      if (wrap) wrap.style.display = 'none';
+      wrap?.nextElementSibling?.style.setProperty('display', 'flex');
+    };
+    if (img.complete && img.naturalWidth > 0) markLoaded();
+    else if (img.complete) markError();
+    else {
+      img.addEventListener('load', markLoaded, { once: true });
+      img.addEventListener('error', markError, { once: true });
     }
   });
 
@@ -297,7 +403,7 @@ function openItem(slug, kind) {
 /* ---- Remove from history/wishlist ---- */
 function removeItem(ctx, slug) {
   if (ctx === 'wishlist') { Wishlist.remove(slug); renderWishlist(); toast('Removed from wishlist'); }
-  else                    { History.remove(slug);  renderHistory();  toast('Removed from history'); }
+  else                    { History.remove(slug);  renderHistory();  renderContinueWatching('movie');  renderContinueWatching('series');  toast('Removed from history'); }
 }
 
 /* ---- Quick wishlist toggle from card ---- */
@@ -326,12 +432,22 @@ function resetModalChrome() {
   document.getElementById('modal-overlay').classList.add('open');
   resetPlayer('Loading…');
   document.getElementById('player-tabs').innerHTML = '';
-  document.getElementById('modal-title').textContent = 'Loading…';
-  document.getElementById('modal-meta').innerHTML   = '';
-  document.getElementById('modal-desc').textContent = '';
-  document.getElementById('modal-cast').innerHTML   = '';
   const picker = document.getElementById('episode-picker');
   if (picker) picker.style.display = 'none';
+
+  // Show skeleton shimmer in the info pane while scraper fetches upstream.
+  // Title/meta/desc/cast get replaced wholesale by renderModal on success,
+  // so we don't need to manage a separate teardown.
+  document.getElementById('modal-title').innerHTML = '<span class="skeleton-line skeleton-line--title"></span>';
+  document.getElementById('modal-meta').innerHTML  = `
+    <span class="pill skeleton-pill"></span>
+    <span class="pill skeleton-pill"></span>
+    <span class="pill skeleton-pill"></span>`;
+  document.getElementById('modal-desc').innerHTML  = `
+    <span class="skeleton-line"></span>
+    <span class="skeleton-line"></span>
+    <span class="skeleton-line skeleton-line--short"></span>`;
+  document.getElementById('modal-cast').innerHTML  = '';
 
   const _mp = document.getElementById('modal-poster');
   _mp.classList.remove('loaded');
@@ -403,9 +519,9 @@ function renderEpisodeList() {
   list.innerHTML = s.episodes.map(e => {
     const active = currentEpisode?.season === s.season && currentEpisode?.episode === e.episode ? ' active' : '';
     return `<button class="episode-btn${active}"
+      data-action="loadEpisode"
       data-season="${s.season}" data-episode="${e.episode}"
-      title="${esc(e.title || `Episode ${e.episode}`)}"
-      onclick="loadEpisode(${s.season}, ${e.episode})">EP ${e.episode}</button>`;
+      title="${esc(e.title || `Episode ${e.episode}`)}">EP ${e.episode}</button>`;
   }).join('');
 }
 
@@ -433,6 +549,7 @@ async function loadEpisode(season, episode) {
 
     renderPlayerTabs();
     renderEpisodeList();      // refresh active highlight
+    renderNextEpisodeBtn();
     status.textContent = `S${season} E${episode}`;
 
     if (currentPlayers.length > 0) loadPlayer(0);
@@ -441,6 +558,43 @@ async function loadEpisode(season, episode) {
     status.textContent = '';
     resetPlayer('Error: ' + e.message);
   }
+}
+
+// Find the next episode in current season, or first ep of the next season.
+// Returns null when there's nothing after the current one.
+function findNextEpisode() {
+  if (!currentSeries || !currentEpisode) return null;
+  const { season, episode } = currentEpisode;
+  const seasons = currentSeries.seasons;
+  const sIdx = seasons.findIndex(s => s.season === season);
+  if (sIdx === -1) return null;
+
+  const eps = seasons[sIdx].episodes;
+  const eIdx = eps.findIndex(e => e.episode === episode);
+  if (eIdx === -1) return null;
+
+  if (eIdx + 1 < eps.length) {
+    return { season, episode: eps[eIdx + 1].episode };
+  }
+  const nextSeason = seasons[sIdx + 1];
+  if (nextSeason && nextSeason.episodes[0]) {
+    return { season: nextSeason.season, episode: nextSeason.episodes[0].episode };
+  }
+  return null;
+}
+
+function renderNextEpisodeBtn() {
+  const btn = document.getElementById('next-episode-btn');
+  if (!btn) return;
+  const next = findNextEpisode();
+  if (!next) { btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  btn.innerHTML = `Next &rarr; EP ${next.episode}${next.season !== currentEpisode.season ? ` (S${next.season})` : ''}`;
+}
+
+function loadNextEpisode() {
+  const next = findNextEpisode();
+  if (next) loadEpisode(next.season, next.episode);
 }
 
 /* ---- Shared: sort players by reliability ---- */
@@ -459,7 +613,7 @@ function renderPlayerTabs() {
     tabsEl.innerHTML = '<span style="color:var(--muted);font-size:12px">No player sources found.</span>';
   } else {
     tabsEl.innerHTML = currentPlayers.map((p, i) =>
-      `<button class="ptab${i===0?' active':''}" onclick="loadPlayer(${i})">${esc(p.label || `Player ${i+1}`)}</button>`
+      `<button class="ptab${i===0?' active':''}" data-action="loadPlayer" data-index="${i}">${esc(p.label || `Player ${i+1}`)}</button>`
     ).join('');
   }
 }
@@ -577,7 +731,7 @@ function loadPlayer(index) {
     referrerpolicy="no-referrer"
   ></iframe>
   <button class="player-fullscreen-btn" id="player-fullscreen-btn"
-          onclick="fullscreenPlayer()" title="Fullscreen" style="display:flex">
+          data-action="fullscreenPlayer" title="Fullscreen" style="display:flex">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
       <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
@@ -614,7 +768,7 @@ function playerErrorHTML(msg, currentIndex) {
     </svg>
     <span style="font-size:13px;color:#e55;max-width:360px;text-align:center">${esc(msg)}</span>
     ${hasNext
-      ? `<button class="btn btn-outline" style="margin-top:10px;font-size:12px" onclick="loadPlayer(${nextIndex})">
+      ? `<button class="btn btn-outline" style="margin-top:10px;font-size:12px" data-action="loadPlayer" data-index="${nextIndex}">
            Try ${esc(currentPlayers[nextIndex]?.label || 'Next Player')}
          </button>`
       : '<span style="font-size:12px;color:var(--muted)">No more players available</span>'
@@ -695,7 +849,7 @@ function resetPlayer(msg) {
       <span>${msg || 'Select a player below to start watching'}</span>
     </div>
     <button class="player-fullscreen-btn" id="player-fullscreen-btn"
-            onclick="fullscreenPlayer()" title="Fullscreen">
+            data-action="fullscreenPlayer" title="Fullscreen">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
         <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
@@ -805,10 +959,66 @@ window.addEventListener('popstate', (e) => {
   }
 });
 
+/* ---- Global event delegation ----
+   All `data-action="foo"` elements dispatch here. Replaces inline
+   onclick="…" handlers that our CSP (script-src-attr 'none') blocks.
+   Card-internal actions (wishlist/remove) are still handled inside
+   attachCardEvents because they need to stopPropagation before the card's
+   own click handler fires. */
+const CLICK_ACTIONS = {
+  showTab:            (el) => showTab(el.dataset.arg),
+  doSearch:           () => doSearch(),
+  watchByUrl:         () => watchByUrl(),
+  applyFilter:        () => applyFilter(),
+  clearHistory:       () => clearHistory(),
+  closeModal:         () => closeModal(),
+  closeModalOverlay:  (el, e) => closeModal(e),
+  fullscreenPlayer:   () => fullscreenPlayer(),
+  toggleDesc:         () => toggleDesc(),
+  toggleWishlist:     () => toggleWishlist(),
+  copyMovieLink:      () => copyMovieLink(),
+  nativeShare:        () => nativeShare(),
+  loadPlayer:         (el) => loadPlayer(parseInt(el.dataset.index, 10)),
+  loadEpisode:        (el) => loadEpisode(
+    parseInt(el.dataset.season,  10),
+    parseInt(el.dataset.episode, 10),
+  ),
+  dismissNotice:      (el) => {
+    const target = document.getElementById(el.dataset.target);
+    if (target) target.style.display = 'none';
+  },
+};
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  // Cards have their own listener that handles wishlist/remove inside
+  // attachCardEvents — leave those alone here.
+  if (el.dataset.action === 'wishlist' || el.dataset.action === 'remove') return;
+  const fn = CLICK_ACTIONS[el.dataset.action];
+  if (fn) fn(el, e);
+});
+
+// Filter selects + season-select all dispatch 'change' to the same registry.
+document.addEventListener('change', (e) => {
+  const id = e.target.id;
+  if (id === 'season-select') renderEpisodeList();
+  else if (id === 'filter-genre' || id === 'filter-country' || id === 'filter-year') applyFilter();
+});
+
+// Enter on the search / URL inputs — previously inline onkeydown handlers.
+document.getElementById('search-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doSearch();
+});
+document.getElementById('url-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') watchByUrl();
+});
+
 /* ---- Init ---- */
 (function init() {
   document.getElementById('browse-bar').style.display = 'flex';
-  loadGrid('browse-grid', '/api/browse');
+  renderContinueWatching('movie');  // Recently Watched on first paint (movies tab)
+  loadHomeRails('home-rails', 'movie');
   updateTabChrome('browse');
 
   const m = location.pathname.match(/^\/movie\/([^/]+)$/);
