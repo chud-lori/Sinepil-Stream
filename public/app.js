@@ -65,7 +65,9 @@ let currentEpisode = null;      // { season, episode } when a series episode is 
 })();
 
 /* ---- Tab switching ---- */
+let activeTab = 'browse';
 function showTab(name) {
+  activeTab = name;
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('sec-' + name)?.classList.add('active');
@@ -77,6 +79,31 @@ function showTab(name) {
   if (name === 'series' && !document.getElementById('series-grid').dataset.loaded) {
     loadGrid('series-grid', '/api/browse/series');
     document.getElementById('series-grid').dataset.loaded = '1';
+  }
+  updateTabChrome(name);
+}
+
+// Update placeholders/labels so the search + watch-by-url bars reflect the
+// currently active tab. Purely cosmetic — search/URL endpoints themselves
+// accept either kind.
+function updateTabChrome(name) {
+  const searchInput = document.getElementById('search-input');
+  const urlInput    = document.getElementById('url-input');
+  const urlLabel    = document.querySelector('.url-bar-label');
+
+  if (name === 'series') {
+    searchInput.placeholder = 'Search series…';
+    urlInput.placeholder = 'Paste a nontondrama.my link (series or episode) to watch…';
+    if (urlLabel) urlLabel.innerHTML = '&#128279; Watch series by URL:';
+  } else if (name === 'browse') {
+    searchInput.placeholder = 'Search movies…';
+    urlInput.placeholder = 'Paste a lk21official.cc link here to watch without ads…';
+    if (urlLabel) urlLabel.innerHTML = '&#128279; Watch movie by URL:';
+  } else {
+    // history / wishlist / search — keep generic wording
+    searchInput.placeholder = 'Search movies or series…';
+    urlInput.placeholder = 'Paste any lk21 movie or nontondrama series link…';
+    if (urlLabel) urlLabel.innerHTML = '&#128279; Watch by URL:';
   }
 }
 
@@ -93,7 +120,7 @@ function applyFilter() {
   loadGrid('browse-grid', `/api/browse?path=${encodeURIComponent(path)}`);
 }
 
-/* ---- Search ---- */
+/* ---- Search (always covers both movies + series, regardless of active tab) ---- */
 async function doSearch() {
   const q = document.getElementById('search-input').value.trim();
   if (!q) return;
@@ -101,19 +128,23 @@ async function doSearch() {
   loadGrid('search-grid', `/api/search?q=${encodeURIComponent(q)}`, 'search-count');
 }
 
-/* ---- Watch by URL ---- */
+/* ---- Watch by URL (accepts lk21 movie URLs + nontondrama series/episode URLs) ---- */
 async function watchByUrl() {
   const input = document.getElementById('url-input');
   const url = input.value.trim();
   if (!url) return;
   const res = await fetch(`/api/slug-from-url?url=${encodeURIComponent(url)}`);
   const data = await res.json();
-  if (data.slug) {
+  if (res.ok && data.slug) {
     input.value = '';
-    openMovie(data.slug);
+    if (data.kind === 'series') {
+      openSeries(data.slug, data.episode ? { autoEpisode: { season: data.season, episode: data.episode } } : {});
+    } else {
+      openMovie(data.slug);
+    }
     return;
   }
-  toast('URL not recognised — must be a link from the source site');
+  toast('URL not recognised — must be an lk21 movie or nontondrama series link');
 }
 
 /* ---- Skeleton card placeholder ---- */
@@ -778,6 +809,7 @@ window.addEventListener('popstate', (e) => {
 (function init() {
   document.getElementById('browse-bar').style.display = 'flex';
   loadGrid('browse-grid', '/api/browse');
+  updateTabChrome('browse');
 
   const m = location.pathname.match(/^\/movie\/([^/]+)$/);
   const s = location.pathname.match(/^\/series\/([^/]+)$/);

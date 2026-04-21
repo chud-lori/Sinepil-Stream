@@ -140,12 +140,13 @@ app.get(/^\/api\/episode\/([^/]+)\/(\d{1,2})\/(\d{1,3})$/, async (req, res) => {
   }
 });
 
-// Resolve a source web URL to a slug so the frontend can open it directly.
-// e.g. GET /api/slug-from-url?url=https://tv10.lk21official.cc/the-hunt-2012/
+// Resolve a source web URL to a {kind, slug, [season, episode]} so the frontend
+// can route to the right modal.
+// Supports lk21 movie URLs and nontondrama series/episode URLs.
 app.get('/api/slug-from-url', (req, res) => {
-  const slug = scraper.slugFromSourceUrl(req.query.url || '');
-  if (!slug) return res.status(400).json({ error: 'Not a valid lk21 URL' });
-  res.json({ slug });
+  const hit = scraper.fromSourceUrl(req.query.url || '');
+  if (!hit) return res.status(400).json({ error: 'Not a recognised lk21 or nontondrama URL' });
+  res.json(hit);
 });
 
 app.get('/api/search', async (req, res) => {
