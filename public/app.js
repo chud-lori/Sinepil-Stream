@@ -224,22 +224,19 @@ function renderWishlist() {
 
 /* ---- Card HTML ---- */
 function cardHTML(m, opts = {}) {
-  // onload handler also covers the cached/synchronous-load case; we re-check in
-  // attachCardEvents below using `complete && naturalWidth` for any image whose
-  // load event already fired before the inline handler was wired up.
   const kind = m.kind === 'series' ? 'series' : 'movie';
   const kindBadge = kind === 'series'
     ? `<span class="card-kind">${m.total_episodes ? `EPS ${m.total_episodes}` : 'SERIES'}</span>`
     : '';
   const watchedBadge = (!opts.hideWatchedBadge && History.has(m.slug))
     ? '<span class="card-watched" title="Watched">&#10003;</span>' : '';
-  // watched badge nests inside the image wrapper so it's positioned on the
-  // poster — not under the card title block.
+  // load / error listeners wired up in attachCardEvents — inline event
+  // handlers would violate our CSP (script-src-attr 'none').
+  // Watched badge nests inside the image wrapper so it sits on the poster,
+  // not under the card title block.
   const poster = m.poster
     ? `<div class="card-img-wrap">
-         <img class="card-img" src="${esc(m.poster)}" alt="${esc(m.title)}" loading="lazy"
-           onload="this.classList.add('loaded');this.parentElement.classList.add('loaded')"
-           onerror="this.parentElement.style.display='none';this.parentElement.nextElementSibling.style.display='flex'">
+         <img class="card-img" src="${esc(m.poster)}" alt="${esc(m.title)}" loading="lazy">
          ${watchedBadge}
        </div>`
     : '';
@@ -283,13 +280,24 @@ function cardHTML(m, opts = {}) {
 }
 
 function attachCardEvents(grid) {
-  // Safety net: if an image was already in the browser cache, its `load` event
-  // may have fired before the inline onload handler attached → opacity stays 0
-  // and the card looks "broken". Sweep cached images and mark them loaded.
+  // Wire up load / error handlers on each freshly-rendered image and also
+  // handle the cached case (load event fired before the listener attached →
+  // we detect with `complete && naturalWidth`).
   grid.querySelectorAll('img.card-img').forEach(img => {
-    if (img.complete && img.naturalWidth > 0) {
+    const markLoaded = () => {
       img.classList.add('loaded');
       img.parentElement?.classList.add('loaded');
+    };
+    const markError = () => {
+      const wrap = img.parentElement;
+      if (wrap) wrap.style.display = 'none';
+      wrap?.nextElementSibling?.style.setProperty('display', 'flex');
+    };
+    if (img.complete && img.naturalWidth > 0) markLoaded();
+    else if (img.complete) markError();
+    else {
+      img.addEventListener('load', markLoaded, { once: true });
+      img.addEventListener('error', markError, { once: true });
     }
   });
 
@@ -438,9 +446,9 @@ function renderEpisodeList() {
   list.innerHTML = s.episodes.map(e => {
     const active = currentEpisode?.season === s.season && currentEpisode?.episode === e.episode ? ' active' : '';
     return `<button class="episode-btn${active}"
+      data-action="loadEpisode"
       data-season="${s.season}" data-episode="${e.episode}"
-      title="${esc(e.title || `Episode ${e.episode}`)}"
-      onclick="loadEpisode(${s.season}, ${e.episode})">EP ${e.episode}</button>`;
+      title="${esc(e.title || `Episode ${e.episode}`)}">EP ${e.episode}</button>`;
   }).join('');
 }
 
@@ -532,7 +540,7 @@ function renderPlayerTabs() {
     tabsEl.innerHTML = '<span style="color:var(--muted);font-size:12px">No player sources found.</span>';
   } else {
     tabsEl.innerHTML = currentPlayers.map((p, i) =>
-      `<button class="ptab${i===0?' active':''}" onclick="loadPlayer(${i})">${esc(p.label || `Player ${i+1}`)}</button>`
+      `<button class="ptab${i===0?' active':''}" data-action="loadPlayer" data-index="${i}">${esc(p.label || `Player ${i+1}`)}</button>`
     ).join('');
   }
 }
@@ -650,7 +658,7 @@ function loadPlayer(index) {
     referrerpolicy="no-referrer"
   ></iframe>
   <button class="player-fullscreen-btn" id="player-fullscreen-btn"
-          onclick="fullscreenPlayer()" title="Fullscreen" style="display:flex">
+          data-action="fullscreenPlayer" title="Fullscreen" style="display:flex">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
       <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
@@ -687,7 +695,7 @@ function playerErrorHTML(msg, currentIndex) {
     </svg>
     <span style="font-size:13px;color:#e55;max-width:360px;text-align:center">${esc(msg)}</span>
     ${hasNext
-      ? `<button class="btn btn-outline" style="margin-top:10px;font-size:12px" onclick="loadPlayer(${nextIndex})">
+      ? `<button class="btn btn-outline" style="margin-top:10px;font-size:12px" data-action="loadPlayer" data-index="${nextIndex}">
            Try ${esc(currentPlayers[nextIndex]?.label || 'Next Player')}
          </button>`
       : '<span style="font-size:12px;color:var(--muted)">No more players available</span>'
@@ -768,7 +776,7 @@ function resetPlayer(msg) {
       <span>${msg || 'Select a player below to start watching'}</span>
     </div>
     <button class="player-fullscreen-btn" id="player-fullscreen-btn"
-            onclick="fullscreenPlayer()" title="Fullscreen">
+            data-action="fullscreenPlayer" title="Fullscreen">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
         <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
@@ -876,6 +884,61 @@ window.addEventListener('popstate', (e) => {
       currentPlayers = [];
     }
   }
+});
+
+/* ---- Global event delegation ----
+   All `data-action="foo"` elements dispatch here. Replaces inline
+   onclick="…" handlers that our CSP (script-src-attr 'none') blocks.
+   Card-internal actions (wishlist/remove) are still handled inside
+   attachCardEvents because they need to stopPropagation before the card's
+   own click handler fires. */
+const CLICK_ACTIONS = {
+  showTab:            (el) => showTab(el.dataset.arg),
+  doSearch:           () => doSearch(),
+  watchByUrl:         () => watchByUrl(),
+  applyFilter:        () => applyFilter(),
+  clearHistory:       () => clearHistory(),
+  closeModal:         () => closeModal(),
+  closeModalOverlay:  (el, e) => closeModal(e),
+  fullscreenPlayer:   () => fullscreenPlayer(),
+  toggleDesc:         () => toggleDesc(),
+  toggleWishlist:     () => toggleWishlist(),
+  copyMovieLink:      () => copyMovieLink(),
+  nativeShare:        () => nativeShare(),
+  loadPlayer:         (el) => loadPlayer(parseInt(el.dataset.index, 10)),
+  loadEpisode:        (el) => loadEpisode(
+    parseInt(el.dataset.season,  10),
+    parseInt(el.dataset.episode, 10),
+  ),
+  dismissNotice:      (el) => {
+    const target = document.getElementById(el.dataset.target);
+    if (target) target.style.display = 'none';
+  },
+};
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  // Cards have their own listener that handles wishlist/remove inside
+  // attachCardEvents — leave those alone here.
+  if (el.dataset.action === 'wishlist' || el.dataset.action === 'remove') return;
+  const fn = CLICK_ACTIONS[el.dataset.action];
+  if (fn) fn(el, e);
+});
+
+// Filter selects + season-select all dispatch 'change' to the same registry.
+document.addEventListener('change', (e) => {
+  const id = e.target.id;
+  if (id === 'season-select') renderEpisodeList();
+  else if (id === 'filter-genre' || id === 'filter-country' || id === 'filter-year') applyFilter();
+});
+
+// Enter on the search / URL inputs — previously inline onkeydown handlers.
+document.getElementById('search-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doSearch();
+});
+document.getElementById('url-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') watchByUrl();
 });
 
 /* ---- Init ---- */
