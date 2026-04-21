@@ -1,11 +1,51 @@
-const express = require('express');
-const path    = require('path');
-const axios   = require('axios');
-const cheerio = require('cheerio');
-const scraper = require('./scraper');
+const express   = require('express');
+const path      = require('path');
+const axios     = require('axios');
+const cheerio   = require('cheerio');
+const helmet    = require('helmet');
+const rateLimit = require('express-rate-limit');
+const scraper   = require('./scraper');
+const { assertSafeOutboundUrl, isAllowedEmbedHost, assertPublicHost } = require('./lib/security');
 
 const app = express();
+
+// Trust Nginx reverse proxy so rate-limit / req.ip see the real client IP.
+app.set('trust proxy', 1);
+
+// Security headers. CSP is intentionally permissive on media/frame sources
+// because the app IS an embed host proxy — tightened mainly for scripts/styles.
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      'default-src':  ["'self'"],
+      'script-src':   ["'self'", "'unsafe-inline'"],
+      'style-src':    ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      'font-src':     ["'self'", 'https://fonts.gstatic.com', 'data:'],
+      'img-src':      ["'self'", 'data:', 'https:'],
+      'media-src':    ["'self'", 'https:', 'blob:'],
+      'connect-src':  ["'self'", 'https:'],
+      'frame-src':    ["'self'", 'https:'],
+      'object-src':   ["'none'"],
+      'base-uri':     ["'self'"],
+      'frame-ancestors': ["'self'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // embeds rely on default (permissive)
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
+
 app.use(express.json());
+
+// Token-bucket rate limit on API routes. Static assets + SPA fallback are free.
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,                     // 120 req/min per IP
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many requests — slow down' },
+});
+app.use('/api/', apiLimiter);
 // Force browsers to revalidate static assets (CSS/JS/HTML) on every request.
 // Without this, Chrome's heuristic cache silently serves stale files for hours
 // after a deploy — UI changes appear "broken" until the user hard-refreshes.
@@ -225,6 +265,7 @@ app.get('/api/resolve', async (req, res) => {
   }
 
   try {
+    await assertPublicHost('playeriframe.sbs');   // DNS rebinding guard
     // Fetch the wrapper page
     const wrapper = await axios.get(url, {
       headers: PLAYER_HDRS,
@@ -286,20 +327,12 @@ app.get('/api/proxy', async (req, res) => {
   const url = req.query.url || '';
   if (!url) return res.status(400).send('Missing url');
 
-  // Only allow http/https URLs (prevent SSRF to internal services)
-  let parsedUrl;
+  // Full guard: scheme + embed-host allowlist + DNS-rebinding-safe private IP
+  // check. Throws on any violation with { status, message }.
   try {
-    parsedUrl = new URL(url);
-  } catch {
-    return res.status(400).send('Invalid URL');
-  }
-  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-    return res.status(403).send('Forbidden');
-  }
-  // Block private/local addresses
-  const host = parsedUrl.hostname;
-  if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(host)) {
-    return res.status(403).send('Forbidden');
+    await assertSafeOutboundUrl(url);
+  } catch (e) {
+    return res.status(e.status || 403).send(e.message || 'Forbidden');
   }
 
   try {
