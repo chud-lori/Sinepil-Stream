@@ -1,7 +1,8 @@
 /* =====================================================================
    SinepilStream — frontend
    History & Wishlist: localStorage (per-browser, no account needed)
-   Player: resolved via /api/resolve to bypass CSP frame-ancestors
+   Player: resolved server-side at scrape time; finalUrl baked into each
+   player object (direct embed, or /api/proxy when CSP blocks direct framing).
    ===================================================================== */
 
 /* ---- localStorage helpers ---- */
@@ -73,7 +74,8 @@ function showTab(name) {
   document.getElementById('sec-' + name)?.classList.add('active');
   // 'search' has no nav-tab anymore — typing in the bar drives navigation directly.
   document.getElementById('tab-' + name)?.classList.add('active');
-  document.getElementById('browse-bar').style.display = (name === 'browse') ? 'flex' : 'none';
+  document.getElementById('browse-bar').style.display        = (name === 'browse') ? 'flex' : 'none';
+  document.getElementById('series-filter-bar').style.display = (name === 'series') ? 'flex' : 'none';
   if (name === 'browse')   renderContinueWatching('movie');
   if (name === 'series')   renderContinueWatching('series');
   if (name === 'history')  renderHistory();
@@ -120,19 +122,61 @@ function applyFilter() {
 
   const railsEl    = document.getElementById('home-rails');
   const filteredEl = document.getElementById('browse-filtered');
+  const clearBtn   = document.querySelector('#browse-bar .filter-clear');
 
   if (!path) {
     railsEl.style.display = '';
     filteredEl.style.display = 'none';
+    if (clearBtn) clearBtn.style.display = 'none';
     loadHomeRails('home-rails', 'movie');
     return;
   }
 
   railsEl.style.display = 'none';
   filteredEl.style.display = '';
+  if (clearBtn) clearBtn.style.display = '';
   const label = path.split('/').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
   document.getElementById('browse-title').textContent = label;
   loadGrid('browse-grid', `/api/browse?path=${encodeURIComponent(path)}`);
+}
+
+function clearMovieFilter() {
+  ['filter-genre', 'filter-country', 'filter-year'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  applyFilter();
+}
+
+function applySeriesFilter() {
+  const genre = document.getElementById('series-filter-genre').value;
+  const year  = document.getElementById('series-filter-year').value;
+  const path  = genre || year || '';
+
+  const railsEl    = document.getElementById('series-rails');
+  const filteredEl = document.getElementById('series-filtered');
+  const clearBtn   = document.querySelector('#series-filter-bar .filter-clear');
+
+  if (!path) {
+    railsEl.style.display = '';
+    filteredEl.style.display = 'none';
+    if (clearBtn) clearBtn.style.display = 'none';
+    // Rails for series are loaded on first tab switch (cached in dataset.loaded)
+    return;
+  }
+
+  railsEl.style.display = 'none';
+  filteredEl.style.display = '';
+  if (clearBtn) clearBtn.style.display = '';
+  const label = path.split('/').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+  document.getElementById('series-title').textContent = label;
+  loadGrid('series-grid', `/api/browse/series?path=${encodeURIComponent(path)}`);
+}
+
+function clearSeriesFilter() {
+  ['series-filter-genre', 'series-filter-year'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  applySeriesFilter();
 }
 
 /* ---- Search (always covers both movies + series, regardless of active tab) ---- */
@@ -141,6 +185,46 @@ async function doSearch() {
   if (!q) return;
   showTab('search');
   loadGrid('search-grid', `/api/search?q=${encodeURIComponent(q)}`, 'search-count');
+}
+
+// Debounced live search. Every keystroke cancels the previous timer + any
+// in-flight fetch, so we only hit the API once the user pauses typing.
+let _searchDebounceT = null;
+let _searchAbortCtl  = null;
+const SEARCH_DEBOUNCE_MS = 300;
+function liveSearch() {
+  const q = document.getElementById('search-input').value.trim();
+  clearTimeout(_searchDebounceT);
+  if (_searchAbortCtl) _searchAbortCtl.abort();
+
+  if (!q) {
+    // Cleared the box — if the user is on the search tab, send them back.
+    if (activeTab === 'search') showTab('browse');
+    return;
+  }
+  if (q.length < 2) return;   // one char is noise; wait for 2+
+
+  _searchDebounceT = setTimeout(async () => {
+    showTab('search');
+    const grid  = document.getElementById('search-grid');
+    const badge = document.getElementById('search-count');
+    grid.innerHTML = Array(12).fill(SKELETON_CARD).join('');
+    badge.textContent = '';
+    _searchAbortCtl = new AbortController();
+    try {
+      const res  = await fetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: _searchAbortCtl.signal });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      badge.textContent = data.length || '';
+      grid.innerHTML = data.length
+        ? data.map(m => cardHTML(m)).join('')
+        : emptyHTML('No results found — try adding a year (e.g. "batman 2012") or browse by genre instead');
+      attachCardEvents(grid);
+    } catch (e) {
+      if (e.name === 'AbortError') return;  // superseded by a newer keystroke
+      grid.innerHTML = emptyHTML('Failed to search: ' + e.message);
+    }
+  }, SEARCH_DEBOUNCE_MS);
 }
 
 /* ---- Watch by URL (accepts source movie URLs + source series/episode URLs) ---- */
@@ -172,6 +256,59 @@ const SKELETON_CARD = `
     </div>
   </div>`;
 
+/* ---- Client-side recommendations ----
+   Cheap genre-overlap ranker. Reads History from localStorage, tallies
+   genre frequencies, then picks unwatched items from the rails that match
+   the user's top genres. Stays on the client — no server impact. */
+const RECS_MIN_HISTORY   = 3;
+const RECS_MAX_ITEMS     = 20;
+const RECS_TOP_N_GENRES  = 3;
+
+function parseGenres(s) {
+  return (s || '').split(',').map(g => g.trim().toLowerCase()).filter(Boolean);
+}
+
+function topGenresFromHistory(kind) {
+  const counts = new Map();
+  History.all()
+    .filter(h => (h.kind || 'movie') === kind)
+    .forEach(h => parseGenres(h.genre).forEach(g => counts.set(g, (counts.get(g) || 0) + 1)));
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, RECS_TOP_N_GENRES)
+    .map(([g]) => g);
+}
+
+// Given all items that appear anywhere in the rails, score each by how many
+// of its genres are in the user's top genres. Excludes things they've opened.
+function buildRecommendations(rails, kind) {
+  const history = History.all().filter(h => (h.kind || 'movie') === kind);
+  if (history.length < RECS_MIN_HISTORY) return null;
+
+  const topGenres = topGenresFromHistory(kind);
+  if (topGenres.length === 0) return null;
+
+  const seenSlugs = new Set(history.map(h => h.slug));
+  const bySlug = new Map();
+  for (const rail of rails) {
+    for (const item of rail.items) {
+      if (seenSlugs.has(item.slug)) continue;
+      if (bySlug.has(item.slug)) continue;
+      const genres = parseGenres(item.genre);
+      const score  = genres.filter(g => topGenres.includes(g)).length;
+      if (score > 0) bySlug.set(item.slug, { item, score });
+    }
+  }
+
+  const ranked = [...bySlug.values()]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, RECS_MAX_ITEMS)
+    .map(r => r.item);
+
+  if (ranked.length === 0) return null;
+  return { id: 'recs', title: 'For You', items: ranked };
+}
+
 /* ---- Home rails (Phase 6): stacked horizontal-scroll rows ---- */
 const RAIL_SKELETON_COUNT = 6;
 
@@ -201,18 +338,59 @@ async function loadHomeRails(containerId, kind) {
       el.innerHTML = emptyHTML('Nothing to show yet — try a genre filter.');
       return;
     }
-    el.innerHTML = rails.map(rail => `
+
+    // Client-side recommendation rail — stitched in at the top if the user
+    // has enough watch history to make the ranking meaningful.
+    const recs = buildRecommendations(rails, kind);
+    const allRails = recs ? [recs, ...rails] : rails;
+
+    el.innerHTML = allRails.map(rail => `
       <div class="home-rail" data-rail-id="${esc(rail.id)}">
         <div class="section-header">
           <span class="section-title">${esc(rail.title)}</span>
         </div>
-        <div class="rail-scroll">${rail.items.map(m => cardHTML(m)).join('')}</div>
+        <div class="rail-wrap">
+          <button class="rail-arrow rail-arrow-left"  aria-label="Scroll left"  data-action="railScroll" data-dir="-1">&lsaquo;</button>
+          <div class="rail-scroll">${rail.items.map(m => cardHTML(m)).join('')}</div>
+          <button class="rail-arrow rail-arrow-right" aria-label="Scroll right" data-action="railScroll" data-dir="1">&rsaquo;</button>
+        </div>
       </div>
     `).join('');
     el.querySelectorAll('.rail-scroll').forEach(attachCardEvents);
+    el.querySelectorAll('.rail-wrap').forEach(updateRailArrows);
   } catch (e) {
     el.innerHTML = emptyHTML('Failed to load home: ' + e.message);
   }
+}
+
+// Scroll handler for the arrow buttons (wired via data-action="railScroll").
+function railScroll(btn) {
+  const dir   = parseInt(btn.dataset.dir, 10) || 1;
+  const wrap  = btn.closest('.rail-wrap');
+  const strip = wrap?.querySelector('.rail-scroll');
+  if (!strip) return;
+  // Scroll by ~85% of the visible width so the user sees a fresh batch
+  // without losing context.
+  const delta = strip.clientWidth * 0.85 * dir;
+  strip.scrollBy({ left: delta, behavior: 'smooth' });
+}
+
+// Show/hide each arrow depending on whether there's more to scroll that way.
+function updateRailArrows(wrap) {
+  const strip = wrap.querySelector('.rail-scroll');
+  const left  = wrap.querySelector('.rail-arrow-left');
+  const right = wrap.querySelector('.rail-arrow-right');
+  if (!strip || !left || !right) return;
+  const sync = () => {
+    const maxScroll = strip.scrollWidth - strip.clientWidth;
+    left.classList.toggle('rail-arrow-hidden',  strip.scrollLeft <= 2);
+    right.classList.toggle('rail-arrow-hidden', strip.scrollLeft >= maxScroll - 2);
+  };
+  sync();
+  strip.addEventListener('scroll', sync, { passive: true });
+  // Re-check after images load, since card heights/widths can shift briefly.
+  setTimeout(sync, 400);
+  window.addEventListener('resize', sync);
 }
 
 /* ---- Generic grid loader ---- */
@@ -340,7 +518,9 @@ function cardHTML(m, opts = {}) {
   }
 
   return `
-    <div class="card" data-slug="${esc(m.slug)}" data-kind="${esc(kind)}">
+    <div class="card" role="button" tabindex="0"
+         aria-label="${esc(m.title)}"
+         data-slug="${esc(m.slug)}" data-kind="${esc(kind)}">
       ${poster}${placeholder}
       ${kindBadge}
       ${looseBadge}
@@ -375,9 +555,9 @@ function attachCardEvents(grid) {
   });
 
   grid.querySelectorAll('.card').forEach(card => {
-    card.addEventListener('click', (e) => {
-      // Action buttons inside the card carry data-action; let them handle the click
-      // and DON'T open the modal in that case.
+    const activate = (e) => {
+      // Action buttons inside the card carry data-action; let them handle
+      // the click/key and DON'T open the modal in that case.
       const btn = e.target.closest('[data-action]');
       if (btn) {
         e.stopPropagation();
@@ -391,6 +571,13 @@ function attachCardEvents(grid) {
         return;
       }
       openItem(card.dataset.slug, card.dataset.kind || 'movie');
+    };
+    card.addEventListener('click', activate);
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        activate(e);
+      }
     });
   });
 }
@@ -969,7 +1156,11 @@ const CLICK_ACTIONS = {
   showTab:            (el) => showTab(el.dataset.arg),
   doSearch:           () => doSearch(),
   watchByUrl:         () => watchByUrl(),
-  applyFilter:        () => applyFilter(),
+  applyFilter:         () => applyFilter(),
+  clearMovieFilter:    () => clearMovieFilter(),
+  applySeriesFilter:   () => applySeriesFilter(),
+  clearSeriesFilter:   () => clearSeriesFilter(),
+  railScroll:          (el) => railScroll(el),
   clearHistory:       () => clearHistory(),
   closeModal:         () => closeModal(),
   closeModalOverlay:  (el, e) => closeModal(e),
@@ -1004,12 +1195,14 @@ document.addEventListener('change', (e) => {
   const id = e.target.id;
   if (id === 'season-select') renderEpisodeList();
   else if (id === 'filter-genre' || id === 'filter-country' || id === 'filter-year') applyFilter();
+  else if (id === 'series-filter-genre' || id === 'series-filter-year') applySeriesFilter();
 });
 
-// Enter on the search / URL inputs — previously inline onkeydown handlers.
+// Enter submits immediately; typing kicks off the debounced liveSearch.
 document.getElementById('search-input')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') doSearch();
 });
+document.getElementById('search-input')?.addEventListener('input', liveSearch);
 document.getElementById('url-input')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') watchByUrl();
 });

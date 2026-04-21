@@ -40,6 +40,10 @@
 </head>
 <body>
 
+<!-- Accessibility: first focusable element. Keyboard / screen-reader users
+     Tab here to skip past nav + filter controls to the main content. -->
+<a href="#main" class="skip-to-content">Skip to content</a>
+
 <!-- NAV -->
 <nav>
   <div class="nav-logo" data-action="showTab" data-arg="browse">&#9654; SinepilStream</div>
@@ -112,6 +116,36 @@
     <option value="year/2015">2015</option>
     <option value="year/2010">2010</option>
   </select>
+
+  <button class="filter-clear" data-action="clearMovieFilter" style="display:none">&#x2715; Clear</button>
+</div>
+
+<!-- SERIES FILTERS (only curated set confirmed to work on nontondrama) -->
+<div id="series-filter-bar" style="display:none">
+  <select class="filter-select" id="series-filter-genre" data-action="applySeriesFilter">
+    <option value="">All Genres</option>
+    <option value="genre/action">Action</option>
+    <option value="genre/comedy">Comedy</option>
+    <option value="genre/drama">Drama</option>
+    <option value="genre/romance">Romance</option>
+    <option value="genre/thriller">Thriller</option>
+    <option value="genre/mystery">Mystery</option>
+    <option value="genre/fantasy">Fantasy</option>
+    <option value="genre/horror">Horror</option>
+  </select>
+
+  <select class="filter-select" id="series-filter-year" data-action="applySeriesFilter">
+    <option value="">All Years</option>
+    <option value="year/2026">2026</option>
+    <option value="year/2025">2025</option>
+    <option value="year/2024">2024</option>
+    <option value="year/2023">2023</option>
+    <option value="year/2022">2022</option>
+    <option value="year/2021">2021</option>
+    <option value="year/2020">2020</option>
+  </select>
+
+  <button class="filter-clear" data-action="clearSeriesFilter" style="display:none">&#x2715; Clear</button>
 </div>
 
 <!-- WATCH BY URL -->
@@ -122,6 +156,7 @@
 </div>
 
 <!-- SECTIONS -->
+<main id="main" tabindex="-1">
 <div id="sec-browse" class="section active">
   <!-- Recently Watched rail — hidden when there is no movie history -->
   <div id="continue-watching" class="home-rail" style="display:none">
@@ -184,6 +219,7 @@
   </div>
   <div id="wishlist-grid" class="grid grid-lg"></div>
 </div>
+</main>
 
 <!-- MOVIE MODAL -->
 <div class="modal-overlay" id="modal-overlay" data-action="closeModalOverlay">

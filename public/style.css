@@ -21,6 +21,32 @@ body {
   min-height: 100vh;
 }
 
+/* Skip-to-content: off-screen until focused, then snaps into view top-left.
+   Keyboard/screen-reader users hit this first on Tab. */
+.skip-to-content {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1000;
+  padding: 8px 14px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 600;
+  transform: translateY(-200%);
+  transition: transform 0.15s;
+}
+.skip-to-content:focus { transform: translateY(0); outline: none; }
+
+main:focus { outline: none; }
+
+/* Focus rings on cards for keyboard users (mouse users still see hover) */
+.card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ---- NAV ---- */
 nav {
   position: sticky;
@@ -112,15 +138,28 @@ nav {
 .nav-tab:hover { color: var(--text); background: var(--surface); }
 .nav-tab.active { color: #fff; background: var(--accent); }
 
-/* ---- BROWSE FILTERS ---- */
-#browse-bar {
+/* ---- BROWSE / SERIES FILTERS ---- */
+#browse-bar,
+#series-filter-bar {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   padding: 16px 24px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  align-items: center;
 }
+
+.filter-clear {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.filter-clear:hover { border-color: var(--accent); color: var(--accent); }
 
 .filter-select {
   background: var(--card);
@@ -341,6 +380,38 @@ nav {
 @media (max-width: 560px) {
   .rail-scroll .card { flex: 0 0 150px; }
   .rail-scroll { padding: 0 14px 10px; gap: 10px; }
+}
+
+/* Horizontal scroll arrows — desktop cue that the rail scrolls.
+   Hidden on touch devices (drag-to-scroll is the native gesture). */
+.rail-wrap {
+  position: relative;
+}
+.rail-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 60px;
+  background: rgba(15, 15, 19, 0.85);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 28px;
+  line-height: 1;
+  z-index: 5;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  border-radius: 4px;
+}
+.rail-arrow-left  { left: 4px;  }
+.rail-arrow-right { right: 4px; }
+.rail-wrap:hover .rail-arrow { opacity: 1; }
+.rail-arrow:hover { background: var(--accent); border-color: var(--accent); }
+.rail-arrow-hidden { display: none; }
+@media (hover: none) {
+  /* Touch devices — natural swipe is better than an arrow-tap target */
+  .rail-arrow { display: none; }
 }
 
 /* Watched badge on cards (only shown when slug is in history).
