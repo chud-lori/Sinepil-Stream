@@ -93,7 +93,7 @@ function updateTabChrome(name) {
 
   if (name === 'series') {
     searchInput.placeholder = 'Search series…';
-    urlInput.placeholder = 'Paste a nontondrama.my link (series or episode) to watch…';
+    urlInput.placeholder = 'Paste a nontondrama.my series or episode link to watch…';
     if (urlLabel) urlLabel.innerHTML = '&#128279; Watch series by URL:';
   } else if (name === 'browse') {
     searchInput.placeholder = 'Search movies…';
@@ -128,7 +128,7 @@ async function doSearch() {
   loadGrid('search-grid', `/api/search?q=${encodeURIComponent(q)}`, 'search-count');
 }
 
-/* ---- Watch by URL (accepts lk21 movie URLs + nontondrama series/episode URLs) ---- */
+/* ---- Watch by URL (accepts source movie URLs + source series/episode URLs) ---- */
 async function watchByUrl() {
   const input = document.getElementById('url-input');
   const url = input.value.trim();
@@ -144,7 +144,7 @@ async function watchByUrl() {
     }
     return;
   }
-  toast('URL not recognised — must be an lk21 movie or nontondrama series link');
+  toast('URL not recognised — must be a lk21 movie or nontondrama series link');
 }
 
 /* ---- Skeleton card placeholder ---- */
