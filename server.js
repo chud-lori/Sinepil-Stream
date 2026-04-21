@@ -96,35 +96,82 @@ const SPOOF_SCRIPT = `<script>
    Scraper routes
    ====================================================== */
 
+// Whitelist characters accepted in user-supplied browse paths before
+// interpolating into source URLs. Allows letters/digits/dashes/slashes only.
+const BROWSE_PATH_RE = /^[a-z0-9/-]{0,100}$/i;
+function isSafeBrowsePath(p) {
+  return typeof p === 'string' && BROWSE_PATH_RE.test(p);
+}
+
+function sendErr(res, e) {
+  const status = e?.status && Number.isInteger(e.status) ? e.status : 500;
+  // Don't leak stack traces; only message
+  res.status(status).json({ error: e?.message || 'Internal error' });
+}
+
 app.get(/^\/api\/movie\/(.+)$/, async (req, res) => {
   try {
+    if (!scraper.isSafeSlug(req.params[0])) return res.status(400).json({ error: 'Invalid slug' });
     res.json(await scraper.getMovie(req.params[0]));
   } catch (e) {
     console.error('movie error:', e.message);
-    res.status(500).json({ error: e.message });
+    sendErr(res, e);
   }
 });
 
-// Resolve a source web URL to a slug so the frontend can open it directly.
-// e.g. GET /api/slug-from-url?url=https://tv10.lk21official.cc/the-hunt-2012/
+app.get(/^\/api\/series\/([^/]+)$/, async (req, res) => {
+  try {
+    if (!scraper.isSafeSlug(req.params[0])) return res.status(400).json({ error: 'Invalid slug' });
+    res.json(await scraper.getSeries(req.params[0]));
+  } catch (e) {
+    console.error('series error:', e.message);
+    sendErr(res, e);
+  }
+});
+
+app.get(/^\/api\/episode\/([^/]+)\/(\d{1,2})\/(\d{1,3})$/, async (req, res) => {
+  try {
+    const [, slug, s, e] = req.params ? [null, req.params[0], req.params[1], req.params[2]] : [];
+    if (!scraper.isSafeSlug(slug)) return res.status(400).json({ error: 'Invalid slug' });
+    res.json(await scraper.getEpisode(slug, s, e));
+  } catch (err) {
+    console.error('episode error:', err.message);
+    sendErr(res, err);
+  }
+});
+
+// Resolve a source web URL to a {kind, slug, [season, episode]} so the frontend
+// can route to the right modal.
+// Supports lk21 movie URLs and nontondrama series/episode URLs.
 app.get('/api/slug-from-url', (req, res) => {
-  const slug = scraper.slugFromSourceUrl(req.query.url || '');
-  if (!slug) return res.status(400).json({ error: 'Not a valid lk21 URL' });
-  res.json({ slug });
+  const hit = scraper.fromSourceUrl(req.query.url || '');
+  if (!hit) return res.status(400).json({ error: 'Not a recognised lk21 or nontondrama URL' });
+  res.json(hit);
 });
 
 app.get('/api/search', async (req, res) => {
   try {
     const q = req.query.q || '';
     if (!q.trim()) return res.json([]);
-    res.json(await scraper.search(q));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    const kind = ['movie', 'series', 'all'].includes(req.query.kind) ? req.query.kind : 'all';
+    res.json(await scraper.search(q, kind));
+  } catch (e) { sendErr(res, e); }
 });
 
 app.get('/api/browse', async (req, res) => {
   try {
-    res.json(await scraper.browse(req.query.path || ''));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    const p = req.query.path || '';
+    if (!isSafeBrowsePath(p)) return res.status(400).json({ error: 'Invalid path' });
+    res.json(await scraper.browse(p));
+  } catch (e) { sendErr(res, e); }
+});
+
+app.get('/api/browse/series', async (req, res) => {
+  try {
+    const p = req.query.path || '';
+    if (!isSafeBrowsePath(p)) return res.status(400).json({ error: 'Invalid path' });
+    res.json(await scraper.browseSeries(p));
+  } catch (e) { sendErr(res, e); }
 });
 
 /* ======================================================
@@ -373,6 +420,7 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
   console.log(`SinepilStream running at http://localhost:${PORT}`);
+  scraper.startSeeding();
   // Signal PM2 that the process is ready — required for zero-downtime reload.
   // pm2 reload waits for this before killing the old process.
   if (process.send) process.send('ready');

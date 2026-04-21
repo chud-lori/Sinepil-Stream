@@ -550,6 +550,74 @@ nav {
   flex-shrink: 0;
 }
 
+/* Episode picker (series) */
+.episode-picker {
+  padding: 10px 16px;
+  background: #111;
+  border-bottom: 1px solid var(--border);
+}
+.episode-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.season-label {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.season-select {
+  background: #1a1a1f;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.episode-status {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+.episode-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.episode-btn {
+  min-width: 48px;
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.episode-btn:hover  { color: var(--text); border-color: #555; }
+.episode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* Series badge on cards */
+.card-kind {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 3px 7px;
+  border-radius: 3px;
+  pointer-events: none;
+}
+
 /* Player tabs */
 .player-tabs {
   display: flex;

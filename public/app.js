@@ -45,12 +45,29 @@ const Wishlist = {
 };
 
 /* ---- State ---- */
-let currentMovie   = null;
+let currentMovie   = null;      // Movie OR series record currently open in modal
 let currentPlayers = [];
 let descExpanded   = false;
+let currentKind    = 'movie';   // 'movie' | 'series'
+let currentSeries  = null;      // full series record (with seasons) when kind === 'series'
+let currentEpisode = null;      // { season, episode } when a series episode is loaded
+
+/* ---- Migration: older localStorage entries have no `kind` — default to movie ---- */
+(function migrateKinds() {
+  for (const k of [HISTORY_KEY, WISHLIST_KEY]) {
+    const list = LS.get(k);
+    let changed = false;
+    for (const item of list) {
+      if (!item.kind) { item.kind = 'movie'; changed = true; }
+    }
+    if (changed) LS.set(k, list);
+  }
+})();
 
 /* ---- Tab switching ---- */
+let activeTab = 'browse';
 function showTab(name) {
+  activeTab = name;
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('sec-' + name)?.classList.add('active');
@@ -59,6 +76,35 @@ function showTab(name) {
   document.getElementById('browse-bar').style.display = (name === 'browse') ? 'flex' : 'none';
   if (name === 'history')  renderHistory();
   if (name === 'wishlist') renderWishlist();
+  if (name === 'series' && !document.getElementById('series-grid').dataset.loaded) {
+    loadGrid('series-grid', '/api/browse/series');
+    document.getElementById('series-grid').dataset.loaded = '1';
+  }
+  updateTabChrome(name);
+}
+
+// Update placeholders/labels so the search + watch-by-url bars reflect the
+// currently active tab. Purely cosmetic — search/URL endpoints themselves
+// accept either kind.
+function updateTabChrome(name) {
+  const searchInput = document.getElementById('search-input');
+  const urlInput    = document.getElementById('url-input');
+  const urlLabel    = document.querySelector('.url-bar-label');
+
+  if (name === 'series') {
+    searchInput.placeholder = 'Search series…';
+    urlInput.placeholder = 'Paste a nontondrama.my link (series or episode) to watch…';
+    if (urlLabel) urlLabel.innerHTML = '&#128279; Watch series by URL:';
+  } else if (name === 'browse') {
+    searchInput.placeholder = 'Search movies…';
+    urlInput.placeholder = 'Paste a lk21official.cc link here to watch without ads…';
+    if (urlLabel) urlLabel.innerHTML = '&#128279; Watch movie by URL:';
+  } else {
+    // history / wishlist / search — keep generic wording
+    searchInput.placeholder = 'Search movies or series…';
+    urlInput.placeholder = 'Paste any lk21 movie or nontondrama series link…';
+    if (urlLabel) urlLabel.innerHTML = '&#128279; Watch by URL:';
+  }
 }
 
 /* ---- Browse / Filter ---- */
@@ -74,7 +120,7 @@ function applyFilter() {
   loadGrid('browse-grid', `/api/browse?path=${encodeURIComponent(path)}`);
 }
 
-/* ---- Search ---- */
+/* ---- Search (always covers both movies + series, regardless of active tab) ---- */
 async function doSearch() {
   const q = document.getElementById('search-input').value.trim();
   if (!q) return;
@@ -82,19 +128,23 @@ async function doSearch() {
   loadGrid('search-grid', `/api/search?q=${encodeURIComponent(q)}`, 'search-count');
 }
 
-/* ---- Watch by URL ---- */
+/* ---- Watch by URL (accepts lk21 movie URLs + nontondrama series/episode URLs) ---- */
 async function watchByUrl() {
   const input = document.getElementById('url-input');
   const url = input.value.trim();
   if (!url) return;
   const res = await fetch(`/api/slug-from-url?url=${encodeURIComponent(url)}`);
   const data = await res.json();
-  if (data.slug) {
+  if (res.ok && data.slug) {
     input.value = '';
-    openMovie(data.slug);
+    if (data.kind === 'series') {
+      openSeries(data.slug, data.episode ? { autoEpisode: { season: data.season, episode: data.episode } } : {});
+    } else {
+      openMovie(data.slug);
+    }
     return;
   }
-  toast('URL not recognised — must be a link from the source site');
+  toast('URL not recognised — must be an lk21 movie or nontondrama series link');
 }
 
 /* ---- Skeleton card placeholder ---- */
@@ -168,6 +218,10 @@ function cardHTML(m, opts = {}) {
        </div>`
     : '';
   const placeholder = `<div class="card-img-placeholder" ${m.poster ? 'style="display:none"' : ''}>&#127916;</div>`;
+  const kind = m.kind === 'series' ? 'series' : 'movie';
+  const kindBadge = kind === 'series'
+    ? `<span class="card-kind">${m.total_episodes ? `EPS ${m.total_episodes}` : 'SERIES'}</span>`
+    : '';
   const stars = m.rating ? `<span class="card-rating">&#9733; ${m.rating}</span>` : '';
   const year  = m.year   ? `<span class="card-year">${m.year}</span>` : '';
 
@@ -192,8 +246,9 @@ function cardHTML(m, opts = {}) {
   }
 
   return `
-    <div class="card" data-slug="${esc(m.slug)}">
+    <div class="card" data-slug="${esc(m.slug)}" data-kind="${esc(kind)}">
       ${poster}${placeholder}
+      ${kindBadge}
       ${actions}
       <div class="card-body">
         <div class="card-title">${esc(m.title)}</div>
@@ -229,9 +284,14 @@ function attachCardEvents(grid) {
         }
         return;
       }
-      openMovie(card.dataset.slug);
+      openItem(card.dataset.slug, card.dataset.kind || 'movie');
     });
   });
+}
+
+function openItem(slug, kind) {
+  if (kind === 'series') return openSeries(slug);
+  return openMovie(slug);
 }
 
 /* ---- Remove from history/wishlist ---- */
@@ -255,30 +315,162 @@ function quickWishlist(btn, movie) {
   toast(added ? `Added "${movie.title}" to wishlist` : 'Removed from wishlist');
 }
 
-/* ---- Open movie modal ---- */
-async function openMovie(slug, { pushHistory = true } = {}) {
+/* ---- Reset modal to a neutral state before loading a new item ---- */
+function resetModalChrome() {
   currentMovie   = null;
+  currentSeries  = null;
+  currentEpisode = null;
   currentPlayers = [];
   descExpanded   = false;
 
-  if (pushHistory) {
-    history.pushState({ slug }, '', '/movie/' + encodeURIComponent(slug));
-  }
-
   document.getElementById('modal-overlay').classList.add('open');
   resetPlayer('Loading…');
-  document.getElementById('player-tabs').innerHTML   = '';
+  document.getElementById('player-tabs').innerHTML = '';
   document.getElementById('modal-title').textContent = 'Loading…';
-  document.getElementById('modal-meta').innerHTML    = '';
-  document.getElementById('modal-desc').textContent  = '';
-  document.getElementById('modal-cast').innerHTML    = '';
-  // Don't clear with `src=''` — Chromium fires an `error` event that
-  // prematurely marks the wrap as 'loaded'. Just drop the loaded class so the
-  // shimmer kicks in again; renderModal will set the new src.
+  document.getElementById('modal-meta').innerHTML   = '';
+  document.getElementById('modal-desc').textContent = '';
+  document.getElementById('modal-cast').innerHTML   = '';
+  const picker = document.getElementById('episode-picker');
+  if (picker) picker.style.display = 'none';
+
   const _mp = document.getElementById('modal-poster');
   _mp.classList.remove('loaded');
   _mp.removeAttribute('src');
   document.getElementById('read-more-btn').style.display = 'none';
+}
+
+/* ---- Open series modal ---- */
+async function openSeries(slug, { pushHistory = true, autoEpisode } = {}) {
+  currentKind = 'series';
+  if (pushHistory) {
+    history.pushState({ slug, kind: 'series' }, '', '/series/' + encodeURIComponent(slug));
+  }
+  resetModalChrome();
+
+  try {
+    const res  = await fetch(`/api/series/${encodeURIComponent(slug)}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    currentSeries = data;
+    currentMovie  = { ...data, kind: 'series' };
+
+    renderModal({ ...data, duration: '' });
+
+    // Save to history (without episode until the user plays one)
+    const existing = History.all().find(m => m.slug === data.slug);
+    History.upsert({
+      slug: data.slug, title: data.title, poster: data.poster,
+      year: data.year, rating: data.rating, genre: data.genre,
+      kind: 'series',
+      lastSeason: existing?.lastSeason || 0,
+      lastEpisode: existing?.lastEpisode || 0,
+    });
+
+    renderSeasonSelect(data);
+
+    const startSeason  = autoEpisode?.season  || existing?.lastSeason  || data.seasons[0]?.season;
+    const startEpisode = autoEpisode?.episode || existing?.lastEpisode || null;
+    if (startSeason) {
+      document.getElementById('season-select').value = String(startSeason);
+      renderEpisodeList();
+      if (startEpisode) loadEpisode(startSeason, startEpisode);
+      else resetPlayer('Select an episode to start watching');
+    } else {
+      resetPlayer('No episodes available');
+    }
+  } catch (e) {
+    document.getElementById('modal-title').textContent = 'Error loading series';
+    resetPlayer('Error: ' + e.message);
+  }
+}
+
+function renderSeasonSelect(data) {
+  const picker = document.getElementById('episode-picker');
+  picker.style.display = 'block';
+  const sel = document.getElementById('season-select');
+  sel.innerHTML = data.seasons.map(s =>
+    `<option value="${s.season}">Season ${s.season} (${s.episodes.length} eps)</option>`
+  ).join('');
+}
+
+function renderEpisodeList() {
+  if (!currentSeries) return;
+  const season = parseInt(document.getElementById('season-select').value, 10);
+  const s = currentSeries.seasons.find(x => x.season === season);
+  const list = document.getElementById('episode-list');
+  if (!s) { list.innerHTML = ''; return; }
+  list.innerHTML = s.episodes.map(e => {
+    const active = currentEpisode?.season === s.season && currentEpisode?.episode === e.episode ? ' active' : '';
+    return `<button class="episode-btn${active}"
+      data-season="${s.season}" data-episode="${e.episode}"
+      title="${esc(e.title || `Episode ${e.episode}`)}"
+      onclick="loadEpisode(${s.season}, ${e.episode})">EP ${e.episode}</button>`;
+  }).join('');
+}
+
+async function loadEpisode(season, episode) {
+  if (!currentSeries) return;
+  const status = document.getElementById('episode-status');
+  status.textContent = `Loading S${season} E${episode}…`;
+  resetPlayer('Loading…');
+  document.getElementById('player-tabs').innerHTML = '';
+
+  try {
+    const res  = await fetch(`/api/episode/${encodeURIComponent(currentSeries.slug)}/${season}/${episode}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    currentEpisode = { season, episode };
+    currentPlayers = sortPlayers(data.players || []);
+
+    // Update history with resume point
+    History.upsert({
+      slug: currentSeries.slug, title: currentSeries.title, poster: currentSeries.poster,
+      year: currentSeries.year, rating: currentSeries.rating, genre: currentSeries.genre,
+      kind: 'series', lastSeason: season, lastEpisode: episode,
+    });
+
+    renderPlayerTabs();
+    renderEpisodeList();      // refresh active highlight
+    status.textContent = `S${season} E${episode}`;
+
+    if (currentPlayers.length > 0) loadPlayer(0);
+    else resetPlayer('No player sources found for this episode');
+  } catch (e) {
+    status.textContent = '';
+    resetPlayer('Error: ' + e.message);
+  }
+}
+
+/* ---- Shared: sort players by reliability ---- */
+function sortPlayers(players) {
+  const PRIORITY = ['CAST', 'HYDRAX', 'TURBOVIP'];
+  return players.slice().sort((a, b) => {
+    const ai = PRIORITY.indexOf((a.label || '').toUpperCase());
+    const bi = PRIORITY.indexOf((b.label || '').toUpperCase());
+    return (ai === -1 ? PRIORITY.length : ai) - (bi === -1 ? PRIORITY.length : bi);
+  });
+}
+
+function renderPlayerTabs() {
+  const tabsEl = document.getElementById('player-tabs');
+  if (currentPlayers.length === 0) {
+    tabsEl.innerHTML = '<span style="color:var(--muted);font-size:12px">No player sources found.</span>';
+  } else {
+    tabsEl.innerHTML = currentPlayers.map((p, i) =>
+      `<button class="ptab${i===0?' active':''}" onclick="loadPlayer(${i})">${esc(p.label || `Player ${i+1}`)}</button>`
+    ).join('');
+  }
+}
+
+/* ---- Open movie modal ---- */
+async function openMovie(slug, { pushHistory = true } = {}) {
+  currentKind = 'movie';
+  if (pushHistory) {
+    history.pushState({ slug, kind: 'movie' }, '', '/movie/' + encodeURIComponent(slug));
+  }
+  resetModalChrome();
 
   try {
     const res  = await fetch(`/api/movie/${encodeURIComponent(slug)}`);
@@ -286,31 +478,21 @@ async function openMovie(slug, { pushHistory = true } = {}) {
     if (data.error) throw new Error(data.error);
 
     if (data.isSeries) {
-      document.getElementById('modal-overlay').classList.remove('open');
-      toast('This title is a TV series — not supported');
-      return;
+      // Source classified it as a series — hand off to series flow
+      return openSeries(slug, { pushHistory: false });
     }
 
     currentMovie = data;
-    // Reorder players: CAST and HYDRAX tend to work; P2P and TURBOVIP often fail.
-    const PLAYER_PRIORITY = ['CAST', 'HYDRAX', 'TURBOVIP'];
-    currentPlayers = (data.players || []).slice().sort((a, b) => {
-      const ai = PLAYER_PRIORITY.indexOf(a.label?.toUpperCase());
-      const bi = PLAYER_PRIORITY.indexOf(b.label?.toUpperCase());
-      const av = ai === -1 ? PLAYER_PRIORITY.length : ai;
-      const bv = bi === -1 ? PLAYER_PRIORITY.length : bi;
-      return av - bv;
-    });
+    currentPlayers = sortPlayers(data.players || []);
 
     renderModal(data);
-
-    // Auto-load the first (most reliable) player
+    renderPlayerTabs();
     if (currentPlayers.length > 0) loadPlayer(0);
 
-    // Save to localStorage history
     History.upsert({
       slug: data.slug, title: data.title, poster: data.poster,
       year: data.year, rating: data.rating, genre: data.genre,
+      kind: 'movie',
     });
   } catch (e) {
     document.getElementById('modal-title').textContent = 'Error loading movie';
@@ -366,15 +548,6 @@ function renderModal(data) {
   const inWL = Wishlist.has(data.slug);
   wBtn.classList.toggle('added', inWL);
   wBtn.innerHTML = inWL ? '&#9829; In Wishlist' : '&#9825; Wishlist';
-
-  const tabsEl = document.getElementById('player-tabs');
-  if (currentPlayers.length === 0) {
-    tabsEl.innerHTML = '<span style="color:var(--muted);font-size:12px">No player sources found.</span>';
-  } else {
-    tabsEl.innerHTML = currentPlayers.map((p, i) =>
-      `<button class="ptab${i===0?' active':''}" onclick="loadPlayer(${i})">${esc(p.label || `Player ${i+1}`)}</button>`
-    ).join('');
-  }
 }
 
 /* ---- Load player (finalUrl pre-resolved during movie scrape — instant) ---- */
@@ -449,14 +622,22 @@ function playerErrorHTML(msg, currentIndex) {
   </div>`;
 }
 
+/* ---- Current item URL path (movie vs series) ---- */
+function currentItemPath() {
+  if (!currentMovie) return '/';
+  const base = currentKind === 'series' ? '/series/' : '/movie/';
+  return base + encodeURIComponent(currentMovie.slug);
+}
+
 /* ---- Wishlist toggle (modal) ---- */
 function toggleWishlist() {
   if (!currentMovie) return;
-  const movie = {
+  const entry = {
     slug: currentMovie.slug, title: currentMovie.title, poster: currentMovie.poster,
     year: currentMovie.year, rating: currentMovie.rating, genre: currentMovie.genre,
+    kind: currentKind,
   };
-  const added = Wishlist.toggle(movie);
+  const added = Wishlist.toggle(entry);
   const wBtn  = document.getElementById('btn-wishlist');
   wBtn.classList.toggle('added', added);
   wBtn.innerHTML = added ? '&#9829; In Wishlist' : '&#9825; Wishlist';
@@ -470,20 +651,21 @@ function closeModal(e) {
   document.querySelector('.modal-close')?.classList.remove('auto-hide', 'visible');
   resetPlayer();
   currentMovie   = null;
+  currentSeries  = null;
+  currentEpisode = null;
   currentPlayers = [];
-  // Restore URL to home (only if we're currently on a /movie/ path)
-  if (location.pathname.startsWith('/movie/')) {
+  // Restore URL to home (only if we're currently on a /movie/ or /series/ path)
+  if (/^\/(movie|series)\//.test(location.pathname)) {
     history.pushState({}, '', '/');
   }
 }
 
-/* ---- Share movie ---- */
+/* ---- Share ---- */
 function copyMovieLink() {
   if (!currentMovie) return;
-  const url = location.origin + '/movie/' + encodeURIComponent(currentMovie.slug);
+  const url = location.origin + currentItemPath();
   const btn = document.getElementById('btn-copy-link');
   navigator.clipboard.writeText(url).then(() => {
-    // In-button confirmation — no toast needed
     const prev = btn.innerHTML;
     btn.innerHTML = `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
       <polyline points="4 10 8 14 16 6"/>
@@ -495,10 +677,11 @@ function copyMovieLink() {
 
 function nativeShare() {
   if (!currentMovie || !navigator.share) return;
+  const kindLabel = currentKind === 'series' ? 'series' : 'movie';
   navigator.share({
     title: currentMovie.title,
-    text: `Watch "${currentMovie.title}" on SinepilStream`,
-    url: location.origin + '/movie/' + encodeURIComponent(currentMovie.slug),
+    text: `Watch the ${kindLabel} "${currentMovie.title}" on SinepilStream`,
+    url: location.origin + currentItemPath(),
   }).catch(() => {});
 }
 
@@ -609,14 +792,14 @@ document.addEventListener('keydown', e => {
 /* ---- Browser back/forward ---- */
 window.addEventListener('popstate', (e) => {
   if (e.state?.slug) {
-    // Navigated forward to a movie URL
-    openMovie(e.state.slug, { pushHistory: false });
+    openItem(e.state.slug, e.state.kind || 'movie');
   } else {
-    // Navigated back to '/'
     if (document.getElementById('modal-overlay').classList.contains('open')) {
       document.getElementById('modal-overlay').classList.remove('open');
       resetPlayer();
       currentMovie   = null;
+      currentSeries  = null;
+      currentEpisode = null;
       currentPlayers = [];
     }
   }
@@ -626,10 +809,10 @@ window.addEventListener('popstate', (e) => {
 (function init() {
   document.getElementById('browse-bar').style.display = 'flex';
   loadGrid('browse-grid', '/api/browse');
+  updateTabChrome('browse');
 
-  // Open movie if landing directly on /movie/:slug
   const m = location.pathname.match(/^\/movie\/([^/]+)$/);
-  if (m) {
-    openMovie(decodeURIComponent(m[1]), { pushHistory: false });
-  }
+  const s = location.pathname.match(/^\/series\/([^/]+)$/);
+  if (m) openMovie(decodeURIComponent(m[1]), { pushHistory: false });
+  else if (s) openSeries(decodeURIComponent(s[1]), { pushHistory: false });
 })();
