@@ -344,6 +344,9 @@ async function openSeries(slug, { pushHistory = true, autoEpisode } = {}) {
       document.getElementById('season-select').value = String(startSeason);
       renderEpisodeList();
       if (startEpisode) loadEpisode(startSeason, startEpisode);
+      else resetPlayer('Select an episode to start watching');
+    } else {
+      resetPlayer('No episodes available');
     }
   } catch (e) {
     document.getElementById('modal-title').textContent = 'Error loading series';
