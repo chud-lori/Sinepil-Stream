@@ -123,25 +123,42 @@
 
 <!-- SECTIONS -->
 <div id="sec-browse" class="section active">
-  <!-- Continue Watching rail — hidden when history is empty -->
-  <div id="continue-watching" class="rail" style="display:none">
+  <!-- Recently Watched rail — hidden when there is no movie history -->
+  <div id="continue-watching" class="home-rail" style="display:none">
     <div class="section-header">
-      <span class="section-title">Continue Watching</span>
+      <span class="section-title">Recently Watched</span>
     </div>
-    <div id="continue-watching-grid" class="grid grid-lg"></div>
+    <div id="continue-watching-grid" class="rail-scroll"></div>
   </div>
 
-  <div class="section-header">
-    <span class="section-title" id="browse-title">Latest Movies</span>
+  <!-- Home rails (Latest / Action / Drama / ...) shown when no filter applied -->
+  <div id="home-rails"></div>
+
+  <!-- Flat grid used only when a filter is active -->
+  <div id="browse-filtered" style="display:none">
+    <div class="section-header">
+      <span class="section-title" id="browse-title">Latest Movies</span>
+    </div>
+    <div id="browse-grid" class="grid grid-lg"></div>
   </div>
-  <div id="browse-grid" class="grid grid-lg"></div>
 </div>
 
 <div id="sec-series" class="section">
-  <div class="section-header">
-    <span class="section-title" id="series-title">Latest Series</span>
+  <!-- Recently Watched (series only) -->
+  <div id="continue-watching-series" class="home-rail" style="display:none">
+    <div class="section-header">
+      <span class="section-title">Recently Watched</span>
+    </div>
+    <div id="continue-watching-series-grid" class="rail-scroll"></div>
   </div>
-  <div id="series-grid" class="grid grid-lg"></div>
+
+  <div id="series-rails"></div>
+  <div id="series-filtered" style="display:none">
+    <div class="section-header">
+      <span class="section-title" id="series-title">Latest Series</span>
+    </div>
+    <div id="series-grid" class="grid grid-lg"></div>
+  </div>
 </div>
 
 <div id="sec-search" class="section">

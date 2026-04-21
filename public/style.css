@@ -308,9 +308,39 @@ nav {
   animation: shimmer 1.6s linear infinite;
 }
 
-/* Continue Watching rail */
+/* Recently Watched rail */
 .rail {
   margin-bottom: 12px;
+}
+
+/* Netflix-style home rails — horizontal scroll strip per genre/year */
+.home-rail {
+  margin-bottom: 24px;
+}
+.rail-scroll {
+  display: flex;
+  gap: 16px;
+  padding: 0 24px 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.rail-scroll::-webkit-scrollbar { height: 6px; }
+.rail-scroll::-webkit-scrollbar-track { background: transparent; }
+.rail-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+.rail-scroll .card {
+  flex: 0 0 200px;
+  scroll-snap-align: start;
+}
+@media (max-width: 560px) {
+  .rail-scroll .card { flex: 0 0 150px; }
+  .rail-scroll { padding: 0 14px 10px; gap: 10px; }
 }
 
 /* Watched badge on cards (only shown when slug is in history).

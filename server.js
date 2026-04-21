@@ -214,6 +214,14 @@ app.get('/api/browse/series', async (req, res) => {
   } catch (e) { sendErr(res, e); }
 });
 
+// Home view — returns an array of rails [{ id, title, path, items }].
+app.get('/api/home', async (req, res) => {
+  try {
+    const kind = req.query.kind === 'series' ? 'series' : 'movie';
+    res.json(await scraper.homeRails(kind));
+  } catch (e) { sendErr(res, e); }
+});
+
 /* ======================================================
    P2P API proxy — called by the spoofed XHR in the player
    Forwards api2.php call from our server with correct domain

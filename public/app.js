@@ -74,12 +74,13 @@ function showTab(name) {
   // 'search' has no nav-tab anymore — typing in the bar drives navigation directly.
   document.getElementById('tab-' + name)?.classList.add('active');
   document.getElementById('browse-bar').style.display = (name === 'browse') ? 'flex' : 'none';
-  if (name === 'browse')   renderContinueWatching();
+  if (name === 'browse')   renderContinueWatching('movie');
+  if (name === 'series')   renderContinueWatching('series');
   if (name === 'history')  renderHistory();
   if (name === 'wishlist') renderWishlist();
-  if (name === 'series' && !document.getElementById('series-grid').dataset.loaded) {
-    loadGrid('series-grid', '/api/browse/series');
-    document.getElementById('series-grid').dataset.loaded = '1';
+  if (name === 'series' && !document.getElementById('series-rails').dataset.loaded) {
+    loadHomeRails('series-rails', 'series');
+    document.getElementById('series-rails').dataset.loaded = '1';
   }
   updateTabChrome(name);
 }
@@ -108,15 +109,28 @@ function updateTabChrome(name) {
   }
 }
 
-/* ---- Browse / Filter ---- */
+/* ---- Browse / Filter ----
+   No filter → show the home rails (Latest / Action / Drama / ...).
+   Any filter → hide rails, show a single flat grid for that filter. */
 function applyFilter() {
   const genre   = document.getElementById('filter-genre').value;
   const country = document.getElementById('filter-country').value;
   const year    = document.getElementById('filter-year').value;
   const path    = genre || country || year || '';
-  const label   = path
-    ? path.split('/').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
-    : 'Latest Movies';
+
+  const railsEl    = document.getElementById('home-rails');
+  const filteredEl = document.getElementById('browse-filtered');
+
+  if (!path) {
+    railsEl.style.display = '';
+    filteredEl.style.display = 'none';
+    loadHomeRails('home-rails', 'movie');
+    return;
+  }
+
+  railsEl.style.display = 'none';
+  filteredEl.style.display = '';
+  const label = path.split('/').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
   document.getElementById('browse-title').textContent = label;
   loadGrid('browse-grid', `/api/browse?path=${encodeURIComponent(path)}`);
 }
@@ -158,6 +172,49 @@ const SKELETON_CARD = `
     </div>
   </div>`;
 
+/* ---- Home rails (Phase 6): stacked horizontal-scroll rows ---- */
+const RAIL_SKELETON_COUNT = 6;
+
+function railSkeletonHTML(title) {
+  const cards = Array(RAIL_SKELETON_COUNT).fill(SKELETON_CARD).join('');
+  return `
+    <div class="home-rail">
+      <div class="section-header">
+        <span class="section-title">${esc(title)}</span>
+      </div>
+      <div class="rail-scroll">${cards}</div>
+    </div>`;
+}
+
+async function loadHomeRails(containerId, kind) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  // Show placeholder rails immediately so the layout doesn't jump in.
+  el.innerHTML = ['Latest', 'Action', 'Drama', 'Released 2026']
+    .map(railSkeletonHTML).join('');
+
+  try {
+    const res   = await fetch(`/api/home?kind=${encodeURIComponent(kind)}`);
+    const rails = await res.json();
+    if (!Array.isArray(rails) || rails.length === 0) {
+      el.innerHTML = emptyHTML('Nothing to show yet — try a genre filter.');
+      return;
+    }
+    el.innerHTML = rails.map(rail => `
+      <div class="home-rail" data-rail-id="${esc(rail.id)}">
+        <div class="section-header">
+          <span class="section-title">${esc(rail.title)}</span>
+        </div>
+        <div class="rail-scroll">${rail.items.map(m => cardHTML(m)).join('')}</div>
+      </div>
+    `).join('');
+    el.querySelectorAll('.rail-scroll').forEach(attachCardEvents);
+  } catch (e) {
+    el.innerHTML = emptyHTML('Failed to load home: ' + e.message);
+  }
+}
+
 /* ---- Generic grid loader ---- */
 async function loadGrid(gridId, apiUrl, badgeId) {
   const grid = document.getElementById(gridId);
@@ -187,17 +244,23 @@ function renderHistory() {
   attachCardEvents(grid, 'history');
 }
 
-/* ---- Continue Watching rail ---- */
-const CONTINUE_WATCHING_MAX = 12;
-function renderContinueWatching() {
-  const wrap = document.getElementById('continue-watching');
-  const grid = document.getElementById('continue-watching-grid');
+/* ---- Recently Watched rail (filtered by kind to match the active tab) ---- */
+const RECENTLY_WATCHED_MAX = 12;
+function renderContinueWatching(kind = 'movie') {
+  // Each tab has its own rail; we render into the one matching `kind`.
+  const wrapId = kind === 'series' ? 'continue-watching-series' : 'continue-watching';
+  const gridId = wrapId + '-grid';
+  const wrap = document.getElementById(wrapId);
+  const grid = document.getElementById(gridId);
   if (!wrap || !grid) return;
-  const items = History.all().slice(0, CONTINUE_WATCHING_MAX);
+
+  const items = History.all()
+    .filter(m => (m.kind || 'movie') === kind)
+    .slice(0, RECENTLY_WATCHED_MAX);
+
   if (items.length === 0) { wrap.style.display = 'none'; return; }
   wrap.style.display = '';
-  // `hideWatchedBadge` — every card here is watched by definition, the tick
-  // on every one would be visual noise.
+  // Every card here is watched by definition — hide the tick to avoid noise.
   grid.innerHTML = items.map(m => cardHTML(m, { hideWatchedBadge: true })).join('');
   attachCardEvents(grid);
 }
@@ -206,7 +269,8 @@ async function clearHistory() {
   if (!confirm('Clear all watch history?')) return;
   History.clear();
   renderHistory();
-  renderContinueWatching();
+  renderContinueWatching('movie');
+  renderContinueWatching('series');
   toast('History cleared');
 }
 
@@ -225,8 +289,17 @@ function renderWishlist() {
 /* ---- Card HTML ---- */
 function cardHTML(m, opts = {}) {
   const kind = m.kind === 'series' ? 'series' : 'movie';
+  // Source gives us `total_seasons` + `total_episodes` where `total_episodes`
+  // is actually "latest episode in the latest season" — misleading for
+  // multi-season shows. Prefer the seasons count when > 1.
   const kindBadge = kind === 'series'
-    ? `<span class="card-kind">${m.total_episodes ? `EPS ${m.total_episodes}` : 'SERIES'}</span>`
+    ? `<span class="card-kind">${
+        m.total_seasons > 1
+          ? `${m.total_seasons} SEASONS`
+          : m.total_episodes
+            ? `EPS ${m.total_episodes}`
+            : 'SERIES'
+      }</span>`
     : '';
   const watchedBadge = (!opts.hideWatchedBadge && History.has(m.slug))
     ? '<span class="card-watched" title="Watched">&#10003;</span>' : '';
@@ -330,7 +403,7 @@ function openItem(slug, kind) {
 /* ---- Remove from history/wishlist ---- */
 function removeItem(ctx, slug) {
   if (ctx === 'wishlist') { Wishlist.remove(slug); renderWishlist(); toast('Removed from wishlist'); }
-  else                    { History.remove(slug);  renderHistory();  renderContinueWatching();  toast('Removed from history'); }
+  else                    { History.remove(slug);  renderHistory();  renderContinueWatching('movie');  renderContinueWatching('series');  toast('Removed from history'); }
 }
 
 /* ---- Quick wishlist toggle from card ---- */
@@ -944,7 +1017,8 @@ document.getElementById('url-input')?.addEventListener('keydown', (e) => {
 /* ---- Init ---- */
 (function init() {
   document.getElementById('browse-bar').style.display = 'flex';
-  loadGrid('browse-grid', '/api/browse');
+  renderContinueWatching('movie');  // Recently Watched on first paint (movies tab)
+  loadHomeRails('home-rails', 'movie');
   updateTabChrome('browse');
 
   const m = location.pathname.match(/^\/movie\/([^/]+)$/);
