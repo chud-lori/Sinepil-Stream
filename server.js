@@ -63,13 +63,13 @@ app.use(express.static(path.join(__dirname, 'public'), {
   },
 }));
 
-const LK21_ORIGIN = 'https://tv10.lk21official.cc';
+const SOURCE_ORIGIN = 'https://tv10.lk21official.cc';
 const BROWSER_UA  = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 const PLAYER_HDRS = {
   'User-Agent': BROWSER_UA,
-  'Referer':    LK21_ORIGIN + '/',
-  'Origin':     LK21_ORIGIN,
+  'Referer':    SOURCE_ORIGIN + '/',
+  'Origin':     SOURCE_ORIGIN,
   'Accept':     'text/html,application/xhtml+xml,*/*',
 };
 
@@ -92,7 +92,7 @@ const SPOOF_SCRIPT = `<script>
   /* --- Spoof referrer --- */
   try {
     Object.defineProperty(document, 'referrer', {
-      get: function(){ return '${LK21_ORIGIN}/'; },
+      get: function(){ return '${SOURCE_ORIGIN}/'; },
       configurable: true
     });
   } catch(e){}
@@ -182,10 +182,10 @@ app.get(/^\/api\/episode\/([^/]+)\/(\d{1,2})\/(\d{1,3})$/, async (req, res) => {
 
 // Resolve a source web URL to a {kind, slug, [season, episode]} so the frontend
 // can route to the right modal.
-// Supports lk21 movie URLs and nontondrama series/episode URLs.
+// Supports source movie URLs and source series/episode URLs.
 app.get('/api/slug-from-url', (req, res) => {
   const hit = scraper.fromSourceUrl(req.query.url || '');
-  if (!hit) return res.status(400).json({ error: 'Not a recognised lk21 or nontondrama URL' });
+  if (!hit) return res.status(400).json({ error: 'URL not recognised — must be a lk21 movie or nontondrama series link' });
   res.json(hit);
 });
 
@@ -225,7 +225,7 @@ app.post('/api/p2p-api', async (req, res) => {
   try {
     const result = await axios.post(
       `https://cloud.hownetwork.xyz/api2.php?id=${encodeURIComponent(id)}`,
-      `r=${encodeURIComponent(LK21_ORIGIN + '/')}&d=tv10.lk21official.cc`,
+      `r=${encodeURIComponent(SOURCE_ORIGIN + '/')}&d=tv10.lk21official.cc`,
       {
         headers: {
           'User-Agent': BROWSER_UA,
@@ -318,7 +318,7 @@ app.get('/api/resolve', async (req, res) => {
 
 /* ======================================================
    Generic proxy
-   - Fetches URL with lk21 Referer from our server
+   - Fetches URL with source-site Referer from our server
    - Strips CSP frame-ancestors so iframe embedding works
    - For HTML: injects <base href> + spoof script
    ====================================================== */
