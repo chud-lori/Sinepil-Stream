@@ -5,7 +5,7 @@ const cheerio   = require('cheerio');
 const helmet    = require('helmet');
 const rateLimit = require('express-rate-limit');
 const scraper   = require('./scraper');
-const { assertSafeOutboundUrl, isAllowedEmbedHost, assertPublicHost } = require('./lib/security');
+const { assertSafeOutboundUrl } = require('./lib/security');
 
 const app = express();
 
@@ -74,21 +74,10 @@ const PLAYER_HDRS = {
 };
 
 // Injected into every proxied player page:
-//  1. Override XHR so api2.php calls route through our /api/p2p-api (CORS fix)
-//  2. Spoof document.referrer
-//  3. Block all popup / popunder / redirect ad techniques
+//  1. Spoof document.referrer
+//  2. Block all popup / popunder / redirect ad techniques
 const SPOOF_SCRIPT = `<script>
 (function(){
-  /* --- XHR intercept for P2P api2.php --- */
-  var _xhrOpen = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function(method, url, async){
-    if(url && url.includes('api2.php')){
-      var m = url.match(/[?&]id=([^&]+)/);
-      url = '/api/p2p-api' + (m ? '?id=' + m[1] : '');
-    }
-    _xhrOpen.call(this, method, url, async !== false);
-  };
-
   /* --- Spoof referrer --- */
   try {
     Object.defineProperty(document, 'referrer', {
@@ -222,107 +211,6 @@ app.get('/api/home', async (req, res) => {
   } catch (e) { sendErr(res, e); }
 });
 
-/* ======================================================
-   P2P API proxy — called by the spoofed XHR in the player
-   Forwards api2.php call from our server with correct domain
-   ====================================================== */
-
-app.post('/api/p2p-api', async (req, res) => {
-  const id = req.query.id || '';
-  if (!id) return res.status(400).json({ error: 'id required' });
-  try {
-    const result = await axios.post(
-      `https://cloud.hownetwork.xyz/api2.php?id=${encodeURIComponent(id)}`,
-      `r=${encodeURIComponent(SOURCE_ORIGIN + '/')}&d=tv10.lk21official.cc`,
-      {
-        headers: {
-          'User-Agent': BROWSER_UA,
-          'Referer':    `https://cloud.hownetwork.xyz/video.php?id=${id}`,
-          'Origin':     'https://cloud.hownetwork.xyz',
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        timeout: 10000,
-      }
-    );
-    res.set('Access-Control-Allow-Origin', '*');
-    res.json(result.data);
-  } catch (e) {
-    res.status(502).json({ error: e.message });
-  }
-});
-
-// OPTIONS preflight for p2p-api
-app.options('/api/p2p-api', (req, res) => {
-  res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type');
-  res.sendStatus(204);
-});
-
-/* ======================================================
-   Player resolver
-   - Fetches playeriframe.sbs wrapper (site Referer)
-   - Extracts inner player URL, follows URL-shortener redirects
-   - Returns direct URL if no CSP, else routes through /api/proxy
-   ====================================================== */
-
-app.get('/api/resolve', async (req, res) => {
-  const url = req.query.url || '';
-  if (!url.startsWith('https://playeriframe.sbs/')) {
-    return res.status(400).json({ error: 'Only playeriframe.sbs URLs supported' });
-  }
-
-  try {
-    await assertPublicHost('playeriframe.sbs');   // DNS rebinding guard
-    // Fetch the wrapper page
-    const wrapper = await axios.get(url, {
-      headers: PLAYER_HDRS,
-      timeout: 12000,
-      maxRedirects: 5,
-    });
-
-    // Extract inner player iframe (skip 1×1 CF challenge iframes)
-    const $ = cheerio.load(wrapper.data);
-    let innerUrl = '';
-    $('iframe').each((_, el) => {
-      const src = $(el).attr('src') || '';
-      const h   = parseInt($(el).attr('height') || '200', 10);
-      const w   = parseInt($(el).attr('width')  || '200', 10);
-      if (src && h > 1 && w > 1) { innerUrl = src; return false; }
-    });
-    if (!innerUrl) innerUrl = $('.embed-container iframe').first().attr('src') || '';
-    if (!innerUrl) return res.status(404).json({ error: 'No inner player found' });
-
-    // Follow redirects (handles URL shorteners like short.icu)
-    let finalUrl = innerUrl;
-    let cspHeader = '';
-    try {
-      const check = await axios.head(innerUrl, {
-        headers: { 'User-Agent': BROWSER_UA, 'Referer': 'https://playeriframe.sbs/' },
-        timeout: 8000,
-        maxRedirects: 10,
-      });
-      // After following redirects, get the final URL
-      finalUrl  = check.request?.res?.responseUrl || check.request?.path
-                  ? (check.request.res?.responseUrl || innerUrl)
-                  : innerUrl;
-      cspHeader = check.headers['content-security-policy'] || '';
-    } catch (e) {
-      // On error keep innerUrl, assume needs proxy
-      cspHeader = 'frame-ancestors blocked';
-    }
-
-    const needsProxy = cspHeader.includes('frame-ancestors');
-
-    if (needsProxy) {
-      res.json({ url: `/api/proxy?url=${encodeURIComponent(finalUrl)}`, proxied: true });
-    } else {
-      res.json({ url: finalUrl, proxied: false });
-    }
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
 
 /* ======================================================
    Generic proxy

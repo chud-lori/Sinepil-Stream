@@ -63,6 +63,8 @@ volumes:
   sinepilstream_data:
 ```
 
+The container listens on **3500** in production (Nginx upstream), while local dev defaults to **3000** — don't confuse the two.
+
 ---
 
 ## Nginx config (example)
@@ -89,20 +91,35 @@ server {
 
 ```
 sinepil-stream/
-├── server.js             # Express app + API routes
-├── scraper.js            # Scraping + SQLite index
+├── server.js                      # Express app + API routes + middleware
+├── scraper.js                     # Backwards-compat shim → lib/
+├── lib/
+│   ├── index.js                   # Facade: unified movie + series API
+│   ├── db.js                      # SQLite schema + prepared statements
+│   ├── cache.js                   # Response-cache wrapper (SWR + coalescing)
+│   ├── resolver.js                # playeriframe.sbs → inner player URL
+│   ├── security.js                # SSRF guard, DNS rebinding, host allowlist
+│   ├── http.js                    # Shared axios + cheerio helpers
+│   └── sources/
+│       ├── movies.js              # Movie source scraper
+│       ├── movies-host.js         # Host-rotation failover
+│       └── series.js              # Series source scraper
+├── public/                        # Static SPA assets
 ├── Dockerfile
 ├── docker-compose.yml
-├── deploy.sh             # Deploy script
-├── Makefile              # Convenience targets
-├── data/                 # Mounted as named Docker volume
-│   └── movies.db         # SQLite movie index — do not delete
-└── logs/                 # Bind-mounted from project dir
+├── deploy.sh / Makefile
+├── data/                          # Mounted as named Docker volume
+│   └── movies.db                  # Movies + series + cache table — do not delete
+└── logs/                          # Bind-mounted from project dir
     ├── out.log
     └── error.log
 ```
 
 ### Data persistence
 
-- `sinepilstream_data` (named volume) → `/app/data/movies.db` — SQLite database. Survives `docker compose down` and rebuilds because it is a named volume, not a bind mount.
+- `sinepilstream_data` (named volume) → `/app/data/movies.db` — SQLite database. Holds the movies and series index, response cache, and rating cache. Survives `docker compose down` and image rebuilds because it is a named volume, not a bind mount.
 - `./logs` (bind mount) → `/app/logs` — log files written directly to the project directory on the host.
+
+### Seeding on deploy
+
+On every container start, `startSeeding()` (in `lib/index.js`) fires 2 s after the server listens. It warms the cache by scraping homepage + last 4 years for both sources. First user to hit the site after deploy sees a warm cache.
