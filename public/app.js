@@ -74,6 +74,7 @@ function showTab(name) {
   // 'search' has no nav-tab anymore — typing in the bar drives navigation directly.
   document.getElementById('tab-' + name)?.classList.add('active');
   document.getElementById('browse-bar').style.display = (name === 'browse') ? 'flex' : 'none';
+  if (name === 'browse')   renderContinueWatching();
   if (name === 'history')  renderHistory();
   if (name === 'wishlist') renderWishlist();
   if (name === 'series' && !document.getElementById('series-grid').dataset.loaded) {
@@ -186,10 +187,26 @@ function renderHistory() {
   attachCardEvents(grid, 'history');
 }
 
+/* ---- Continue Watching rail ---- */
+const CONTINUE_WATCHING_MAX = 12;
+function renderContinueWatching() {
+  const wrap = document.getElementById('continue-watching');
+  const grid = document.getElementById('continue-watching-grid');
+  if (!wrap || !grid) return;
+  const items = History.all().slice(0, CONTINUE_WATCHING_MAX);
+  if (items.length === 0) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  // `hideWatchedBadge` — every card here is watched by definition, the tick
+  // on every one would be visual noise.
+  grid.innerHTML = items.map(m => cardHTML(m, { hideWatchedBadge: true })).join('');
+  attachCardEvents(grid);
+}
+
 async function clearHistory() {
   if (!confirm('Clear all watch history?')) return;
   History.clear();
   renderHistory();
+  renderContinueWatching();
   toast('History cleared');
 }
 
@@ -210,18 +227,25 @@ function cardHTML(m, opts = {}) {
   // onload handler also covers the cached/synchronous-load case; we re-check in
   // attachCardEvents below using `complete && naturalWidth` for any image whose
   // load event already fired before the inline handler was wired up.
+  const kind = m.kind === 'series' ? 'series' : 'movie';
+  const kindBadge = kind === 'series'
+    ? `<span class="card-kind">${m.total_episodes ? `EPS ${m.total_episodes}` : 'SERIES'}</span>`
+    : '';
+  const watchedBadge = (!opts.hideWatchedBadge && History.has(m.slug))
+    ? '<span class="card-watched" title="Watched">&#10003;</span>' : '';
+  // watched badge nests inside the image wrapper so it's positioned on the
+  // poster — not under the card title block.
   const poster = m.poster
     ? `<div class="card-img-wrap">
          <img class="card-img" src="${esc(m.poster)}" alt="${esc(m.title)}" loading="lazy"
            onload="this.classList.add('loaded');this.parentElement.classList.add('loaded')"
            onerror="this.parentElement.style.display='none';this.parentElement.nextElementSibling.style.display='flex'">
+         ${watchedBadge}
        </div>`
     : '';
   const placeholder = `<div class="card-img-placeholder" ${m.poster ? 'style="display:none"' : ''}>&#127916;</div>`;
-  const kind = m.kind === 'series' ? 'series' : 'movie';
-  const kindBadge = kind === 'series'
-    ? `<span class="card-kind">${m.total_episodes ? `EPS ${m.total_episodes}` : 'SERIES'}</span>`
-    : '';
+  // Fallback: no poster → render badge directly on the card
+  const looseBadge = !m.poster ? watchedBadge : '';
   const stars = m.rating ? `<span class="card-rating">&#9733; ${m.rating}</span>` : '';
   const year  = m.year   ? `<span class="card-year">${m.year}</span>` : '';
 
@@ -249,6 +273,7 @@ function cardHTML(m, opts = {}) {
     <div class="card" data-slug="${esc(m.slug)}" data-kind="${esc(kind)}">
       ${poster}${placeholder}
       ${kindBadge}
+      ${looseBadge}
       ${actions}
       <div class="card-body">
         <div class="card-title">${esc(m.title)}</div>
@@ -297,7 +322,7 @@ function openItem(slug, kind) {
 /* ---- Remove from history/wishlist ---- */
 function removeItem(ctx, slug) {
   if (ctx === 'wishlist') { Wishlist.remove(slug); renderWishlist(); toast('Removed from wishlist'); }
-  else                    { History.remove(slug);  renderHistory();  toast('Removed from history'); }
+  else                    { History.remove(slug);  renderHistory();  renderContinueWatching();  toast('Removed from history'); }
 }
 
 /* ---- Quick wishlist toggle from card ---- */
@@ -326,12 +351,22 @@ function resetModalChrome() {
   document.getElementById('modal-overlay').classList.add('open');
   resetPlayer('Loading…');
   document.getElementById('player-tabs').innerHTML = '';
-  document.getElementById('modal-title').textContent = 'Loading…';
-  document.getElementById('modal-meta').innerHTML   = '';
-  document.getElementById('modal-desc').textContent = '';
-  document.getElementById('modal-cast').innerHTML   = '';
   const picker = document.getElementById('episode-picker');
   if (picker) picker.style.display = 'none';
+
+  // Show skeleton shimmer in the info pane while scraper fetches upstream.
+  // Title/meta/desc/cast get replaced wholesale by renderModal on success,
+  // so we don't need to manage a separate teardown.
+  document.getElementById('modal-title').innerHTML = '<span class="skeleton-line skeleton-line--title"></span>';
+  document.getElementById('modal-meta').innerHTML  = `
+    <span class="pill skeleton-pill"></span>
+    <span class="pill skeleton-pill"></span>
+    <span class="pill skeleton-pill"></span>`;
+  document.getElementById('modal-desc').innerHTML  = `
+    <span class="skeleton-line"></span>
+    <span class="skeleton-line"></span>
+    <span class="skeleton-line skeleton-line--short"></span>`;
+  document.getElementById('modal-cast').innerHTML  = '';
 
   const _mp = document.getElementById('modal-poster');
   _mp.classList.remove('loaded');
@@ -433,6 +468,7 @@ async function loadEpisode(season, episode) {
 
     renderPlayerTabs();
     renderEpisodeList();      // refresh active highlight
+    renderNextEpisodeBtn();
     status.textContent = `S${season} E${episode}`;
 
     if (currentPlayers.length > 0) loadPlayer(0);
@@ -441,6 +477,43 @@ async function loadEpisode(season, episode) {
     status.textContent = '';
     resetPlayer('Error: ' + e.message);
   }
+}
+
+// Find the next episode in current season, or first ep of the next season.
+// Returns null when there's nothing after the current one.
+function findNextEpisode() {
+  if (!currentSeries || !currentEpisode) return null;
+  const { season, episode } = currentEpisode;
+  const seasons = currentSeries.seasons;
+  const sIdx = seasons.findIndex(s => s.season === season);
+  if (sIdx === -1) return null;
+
+  const eps = seasons[sIdx].episodes;
+  const eIdx = eps.findIndex(e => e.episode === episode);
+  if (eIdx === -1) return null;
+
+  if (eIdx + 1 < eps.length) {
+    return { season, episode: eps[eIdx + 1].episode };
+  }
+  const nextSeason = seasons[sIdx + 1];
+  if (nextSeason && nextSeason.episodes[0]) {
+    return { season: nextSeason.season, episode: nextSeason.episodes[0].episode };
+  }
+  return null;
+}
+
+function renderNextEpisodeBtn() {
+  const btn = document.getElementById('next-episode-btn');
+  if (!btn) return;
+  const next = findNextEpisode();
+  if (!next) { btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  btn.innerHTML = `Next &rarr; EP ${next.episode}${next.season !== currentEpisode.season ? ` (S${next.season})` : ''}`;
+}
+
+function loadNextEpisode() {
+  const next = findNextEpisode();
+  if (next) loadEpisode(next.season, next.episode);
 }
 
 /* ---- Shared: sort players by reliability ---- */

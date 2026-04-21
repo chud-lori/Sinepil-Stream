@@ -125,6 +125,14 @@
 
 <!-- SECTIONS -->
 <div id="sec-browse" class="section active">
+  <!-- Continue Watching rail — hidden when history is empty -->
+  <div id="continue-watching" class="rail" style="display:none">
+    <div class="section-header">
+      <span class="section-title">Continue Watching</span>
+    </div>
+    <div id="continue-watching-grid" class="grid grid-lg"></div>
+  </div>
+
   <div class="section-header">
     <span class="section-title" id="browse-title">Latest Movies</span>
   </div>
@@ -191,6 +199,9 @@
         <label for="season-select" class="season-label">Season</label>
         <select id="season-select" class="season-select" onchange="renderEpisodeList()"></select>
         <span class="episode-status" id="episode-status"></span>
+        <button id="next-episode-btn" class="btn-next-ep" onclick="loadNextEpisode()" style="display:none">
+          Next &rarr;
+        </button>
       </div>
       <div class="episode-list" id="episode-list"></div>
     </div>
