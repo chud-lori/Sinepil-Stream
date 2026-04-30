@@ -439,7 +439,13 @@ function renderContinueWatching(kind = 'movie') {
   if (items.length === 0) { wrap.style.display = 'none'; return; }
   wrap.style.display = '';
   // Every card here is watched by definition — hide the tick to avoid noise.
-  grid.innerHTML = items.map(m => cardHTML(m, { hideWatchedBadge: true })).join('');
+  // For series with a resume point, surface "S2 E5" so users know where they'll pick up.
+  grid.innerHTML = items.map(m => {
+    const progressBadge = (m.kind === 'series' && m.lastSeason && m.lastEpisode)
+      ? `S${m.lastSeason} E${m.lastEpisode}`
+      : null;
+    return cardHTML(m, { hideWatchedBadge: true, progressBadge });
+  }).join('');
   attachCardEvents(grid);
 }
 
@@ -470,14 +476,17 @@ function cardHTML(m, opts = {}) {
   // Source gives us `total_seasons` + `total_episodes` where `total_episodes`
   // is actually "latest episode in the latest season" — misleading for
   // multi-season shows. Prefer the seasons count when > 1.
+  // For series in Recently Watched (opts.progressBadge), show resume point
+  // ("S2 E5") instead of the static SEASONS/EPS count — tells the user where
+  // they'll pick up at a glance.
+  const seriesBadgeText = opts.progressBadge
+    || (m.total_seasons > 1
+      ? `${m.total_seasons} SEASONS`
+      : m.total_episodes
+        ? `EPS ${m.total_episodes}`
+        : 'SERIES');
   const kindBadge = kind === 'series'
-    ? `<span class="card-kind">${
-        m.total_seasons > 1
-          ? `${m.total_seasons} SEASONS`
-          : m.total_episodes
-            ? `EPS ${m.total_episodes}`
-            : 'SERIES'
-      }</span>`
+    ? `<span class="card-kind">${seriesBadgeText}</span>`
     : '';
   const watchedBadge = (!opts.hideWatchedBadge && History.has(m.slug))
     ? '<span class="card-watched" title="Watched">&#10003;</span>' : '';
@@ -519,6 +528,7 @@ function cardHTML(m, opts = {}) {
 
   return `
     <div class="card" role="button" tabindex="0"
+         title="${esc(m.title)}"
          aria-label="${esc(m.title)}"
          data-slug="${esc(m.slug)}" data-kind="${esc(kind)}">
       ${poster}${placeholder}
@@ -672,13 +682,35 @@ async function openSeries(slug, { pushHistory = true, autoEpisode } = {}) {
 
     renderSeasonSelect(data);
 
-    const startSeason  = autoEpisode?.season  || existing?.lastSeason  || data.seasons[0]?.season;
-    const startEpisode = autoEpisode?.episode || existing?.lastEpisode || null;
+    // Resume strategy:
+    //   1. Deep-link autoEpisode wins.
+    //   2. Else, if there's history → jump to the *next* episode after last-played
+    //      ("Continue from where you left"). If already at the latest, replay it.
+    //   3. Else, no autoplay — let the user pick.
+    let startSeason  = autoEpisode?.season  || data.seasons[0]?.season;
+    let startEpisode = autoEpisode?.episode || null;
+    let continuing   = false;
+    if (!autoEpisode && existing?.lastSeason && existing?.lastEpisode) {
+      const next = nextEpisodeAfter(data.seasons, existing.lastSeason, existing.lastEpisode);
+      if (next) {
+        startSeason  = next.season;
+        startEpisode = next.episode;
+        continuing   = true;
+      } else {
+        // At the end — replay the last one rather than dropping the user back to S1
+        startSeason  = existing.lastSeason;
+        startEpisode = existing.lastEpisode;
+      }
+    }
     if (startSeason) {
       document.getElementById('season-select').value = String(startSeason);
       renderEpisodeList();
-      if (startEpisode) loadEpisode(startSeason, startEpisode);
-      else resetPlayer('Select an episode to start watching');
+      if (startEpisode) {
+        if (continuing) toast(`Continuing from S${startSeason} E${startEpisode}`, 3000);
+        loadEpisode(startSeason, startEpisode);
+      } else {
+        resetPlayer('Select an episode to start watching');
+      }
     } else {
       resetPlayer('No episodes available');
     }
@@ -747,12 +779,10 @@ async function loadEpisode(season, episode) {
   }
 }
 
-// Find the next episode in current season, or first ep of the next season.
-// Returns null when there's nothing after the current one.
-function findNextEpisode() {
-  if (!currentSeries || !currentEpisode) return null;
-  const { season, episode } = currentEpisode;
-  const seasons = currentSeries.seasons;
+// Find the next episode after (season, episode) in the given seasons array.
+// Returns null when there's nothing after — i.e. user is at the latest episode.
+function nextEpisodeAfter(seasons, season, episode) {
+  if (!seasons || !season || !episode) return null;
   const sIdx = seasons.findIndex(s => s.season === season);
   if (sIdx === -1) return null;
 
@@ -768,6 +798,11 @@ function findNextEpisode() {
     return { season: nextSeason.season, episode: nextSeason.episodes[0].episode };
   }
   return null;
+}
+
+function findNextEpisode() {
+  if (!currentSeries || !currentEpisode) return null;
+  return nextEpisodeAfter(currentSeries.seasons, currentEpisode.season, currentEpisode.episode);
 }
 
 function renderNextEpisodeBtn() {
