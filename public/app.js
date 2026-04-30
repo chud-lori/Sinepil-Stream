@@ -87,12 +87,14 @@ const Sync = {
     if (token)            Sync.token       = token;
     if (code)             Sync.code        = code;
     if (code_expires_at)  Sync.codeExpires = code_expires_at;
+    try { refreshSyncIndicator(); } catch {}
   },
 
   _clearCreds() {
     Sync.token       = '';
     Sync.code        = '';
     Sync.codeExpires = '';
+    try { refreshSyncIndicator(); } catch {}
   },
 
   async _post(path, body) {
@@ -125,6 +127,7 @@ const Sync = {
     // post-pair (server doesn't surface it here) — user can regenerate if needed.
     Sync.code = code;
     Sync.codeExpires = '';
+    try { refreshSyncIndicator(); } catch {}
     // Merge — must NOT replace, or we'd nuke this device's pre-pair history.
     Sync._mergeIntoLocal(data.payload || {});
     Sync._refreshUI();
@@ -1385,6 +1388,14 @@ function closeSyncOverlay() {
   document.getElementById('sync-overlay').classList.remove('open');
 }
 
+// Show/hide the green paired-dot in the nav button. Cheap, runs on init
+// + after pair/disconnect/regenerate.
+function refreshSyncIndicator() {
+  const dot = document.getElementById('nav-sync-dot');
+  if (!dot) return;
+  dot.hidden = !Sync.token;
+}
+
 function renderSyncBody() {
   const body = document.getElementById('sync-body');
   if (!body) return;
@@ -1561,6 +1572,7 @@ document.addEventListener('keydown', (e) => {
   updateTabChrome('browse');
 
   // Pull remote state if this device is paired — fire-and-forget.
+  refreshSyncIndicator();
   Sync.syncOnLoad();
 
   const m = location.pathname.match(/^\/movie\/([^/]+)$/);

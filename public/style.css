@@ -138,6 +138,26 @@ nav {
 .nav-tab:hover { color: var(--text); background: var(--surface); }
 .nav-tab.active { color: #fff; background: var(--accent); }
 
+/* Sync nav button: icon + label, never receives the .active class */
+.nav-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  position: relative;
+}
+.nav-sync svg { display: block; }
+.nav-sync-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent2, #22c55e);
+  margin-left: 2px;
+}
+@media (max-width: 720px) {
+  .nav-sync-label { display: none; }
+}
+
 /* ---- BROWSE / SERIES FILTERS ---- */
 #browse-bar,
 #series-filter-bar {

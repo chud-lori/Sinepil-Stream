@@ -63,6 +63,15 @@
     <button class="nav-tab"        id="tab-series"   data-action="showTab" data-arg="series">Series</button>
     <button class="nav-tab"        id="tab-history"  data-action="showTab" data-arg="history">History</button>
     <button class="nav-tab"        id="tab-wishlist" data-action="showTab" data-arg="wishlist">Wishlist</button>
+    <button class="nav-tab nav-sync" id="tab-sync"   data-action="openSync"
+            title="Sync across devices" aria-label="Sync across devices">
+      <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="3 7 7 3 7 6"/><path d="M7 3a7 7 0 0 1 7 7"/>
+        <polyline points="17 13 13 17 13 14"/><path d="M13 17a7 7 0 0 1-7-7"/>
+      </svg>
+      <span class="nav-sync-label">Sync</span>
+      <span class="nav-sync-dot" id="nav-sync-dot" hidden></span>
+    </button>
   </div>
 </nav>
 
