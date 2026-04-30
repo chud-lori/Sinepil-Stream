@@ -1116,4 +1116,25 @@ nav {
 }
 .sync-actions { display: flex; flex-direction: column; gap: 10px; }
 .sync-row { display: flex; gap: 8px; }
+
+/* Default .btn is inline-flex with no justify-content — looks like a left-aligned
+   link inside a column flex parent. Inside the sync dialog we want chunky,
+   full-width, centered buttons that look like buttons. */
+.sync-dialog .btn {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  padding: 12px 18px;
+  font-size: 14px;
+}
 .sync-row .btn { flex: 1; }
+
+/* Outline button needs more contrast against the dialog background. */
+.sync-dialog .btn-outline {
+  background: rgba(255,255,255,0.04);
+  border-color: #555;
+}
+.sync-dialog .btn-outline:hover {
+  background: rgba(255,255,255,0.10);
+  border-color: #777;
+}
