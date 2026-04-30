@@ -619,7 +619,7 @@ nav {
 }
 .player-fullscreen-btn.visible { opacity: 1; }
 
-/* In fullscreen: fill screen, fix aspect-ratio trick, keep button visible */
+/* In fullscreen: fill screen, fix aspect-ratio trick */
 .player-wrap:fullscreen,
 .player-wrap:-webkit-full-screen {
   padding-bottom: 0;
@@ -633,10 +633,9 @@ nav {
   width: 100%;
   height: 100%;
 }
-/* Always show our exit button in fullscreen — user must be able to find it */
+/* Slightly stronger background in fullscreen so the button stays legible against video */
 .player-wrap:fullscreen .player-fullscreen-btn,
 .player-wrap:-webkit-full-screen .player-fullscreen-btn {
-  opacity: 1;
   background: rgba(0,0,0,0.75);
 }
 

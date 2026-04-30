@@ -1066,7 +1066,7 @@ _modal?.addEventListener('touchstart', showFsBtn, { passive: true });
 // Show on any keypress (useful in fullscreen where mouse events are inside iframe)
 document.addEventListener('keydown', showFsBtn);
 
-/* ---- Fullscreen the player wrap (not the iframe) so our button stays visible ---- */
+/* ---- Fullscreen the player wrap (not the iframe) so our button can overlay the video ---- */
 function fullscreenPlayer() {
   if (document.fullscreenElement) {
     document.exitFullscreen();
