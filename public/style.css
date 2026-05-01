@@ -671,6 +671,35 @@ nav {
   stroke-width: 2;
 }
 
+/* Next-episode overlay button (series only). Sits beside the fullscreen button
+   so all player overlay controls share the same fade-in/out cycle. */
+.player-next-ep-btn {
+  position: absolute;
+  top: 8px;
+  left: 48px;        /* fullscreen-btn at left:8 width:32 + 8px gap */
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.6);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  display: none;     /* set to flex inline when iframe + a next ep exists */
+  align-items: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+  white-space: nowrap;
+}
+.player-next-ep-btn.visible { opacity: 1; }
+.player-next-ep-btn:hover   { background: var(--accent); }
+.player-wrap:fullscreen .player-next-ep-btn,
+.player-wrap:-webkit-full-screen .player-next-ep-btn {
+  background: rgba(0, 0, 0, 0.75);
+}
+
 .player-placeholder {
   position: absolute;
   inset: 0;

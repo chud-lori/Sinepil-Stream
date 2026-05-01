@@ -1136,6 +1136,18 @@ function loadPlayer(index) {
     return;
   }
 
+  // For series with a next episode, overlay a "Next →" button on the player.
+  // The picker below the iframe is unreachable on TV/remote setups (cross-origin
+  // iframe captures pointer events), so this overlay is the only way to advance
+  // without leaving the player.
+  const nextEp = (currentKind === 'series') ? findNextEpisode() : null;
+  const nextEpBtnHTML = nextEp
+    ? `<button class="player-next-ep-btn" id="player-next-ep-btn"
+               data-action="loadNextEpisode" title="Next episode" style="display:flex">
+         Next &rarr; EP ${nextEp.episode}${nextEp.season !== currentEpisode.season ? ` (S${nextEp.season})` : ''}
+       </button>`
+    : '';
+
   wrap.innerHTML = `<iframe
     id="player-iframe"
     src="${esc(playerUrl)}"
@@ -1149,7 +1161,8 @@ function loadPlayer(index) {
       <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
       <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
     </svg>
-  </button>`;
+  </button>
+  ${nextEpBtnHTML}`;
 
   // Detect network-level load failures: if the iframe never fires `load`
   // within the timeout window, surface the "try next player" fallback.
@@ -1276,12 +1289,15 @@ let _fsIdleTimer = null;
 function showFsBtn() {
   const btn   = document.getElementById('player-fullscreen-btn');
   const close = document.querySelector('.modal-close');
+  const next  = document.getElementById('player-next-ep-btn');
   if (btn && btn.style.display === 'flex') btn.classList.add('visible');
   if (close && close.classList.contains('auto-hide')) close.classList.add('visible');
+  if (next && next.style.display === 'flex') next.classList.add('visible');
   clearTimeout(_fsIdleTimer);
   _fsIdleTimer = setTimeout(() => {
     document.getElementById('player-fullscreen-btn')?.classList.remove('visible');
     document.querySelector('.modal-close')?.classList.remove('visible');
+    document.getElementById('player-next-ep-btn')?.classList.remove('visible');
   }, 3000);
 }
 
@@ -1514,6 +1530,7 @@ const CLICK_ACTIONS = {
     parseInt(el.dataset.season,  10),
     parseInt(el.dataset.episode, 10),
   ),
+  loadNextEpisode:    () => loadNextEpisode(),
   dismissNotice:      (el) => {
     const target = document.getElementById(el.dataset.target);
     if (target) target.style.display = 'none';
