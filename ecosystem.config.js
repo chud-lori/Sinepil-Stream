@@ -18,9 +18,11 @@ module.exports = {
         PORT:     3500,
       },
 
-      // Auto-restart on crash; cap memory for <2 GB servers
+      // Auto-restart on crash; cap memory for <2 GB servers.
+      // Bumped to 700M to leave headroom for the headless Chromium instance
+      // that resolves encrypted player tokens (see lib/headless.js).
       autorestart:        true,
-      max_memory_restart: '300M',
+      max_memory_restart: '700M',
       restart_delay:      1000,
       max_restarts:       10,
 
