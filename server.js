@@ -227,9 +227,15 @@ app.post('/api/sync/pair', (req, res) => {
   } catch (e) { sendErr(res, e); }
 });
 
+// Token in `Authorization: Bearer <token>` — NOT the query string. Query
+// strings end up in access logs, browser history, and Referer headers; the
+// sync token grants full read/write of the user's history+wishlist, so we
+// treat it like a session credential.
 app.get('/api/sync/pull', (req, res) => {
   try {
-    const token = String(req.query.token || '');
+    const auth = String(req.headers.authorization || '');
+    const m = /^Bearer\s+(.+)$/i.exec(auth);
+    const token = m ? m[1] : '';
     res.json(sync.pullByToken(token));
   } catch (e) { sendErr(res, e); }
 });
@@ -270,30 +276,52 @@ app.get('/api/home', async (req, res) => {
    - For HTML: injects <base href> + spoof script
    ====================================================== */
 
+// Follow redirects manually so we can re-run `assertSafeOutboundUrl` on every
+// hop. Without this, an allowlisted host can 302 to a private IP (cloud metadata,
+// localhost, another container on the Docker network) and axios will dutifully
+// follow — bypassing the SSRF guard, which only checked the initial URL.
+const MAX_REDIRECT_HOPS  = 5;
+const PROXY_MAX_BODY     = 10 * 1024 * 1024; // 10 MB — caps memory per request
+
+async function safeProxyFetch(initialUrl, axiosOpts) {
+  let currentUrl = initialUrl;
+  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+    await assertSafeOutboundUrl(currentUrl);
+    const response = await axios.get(currentUrl, {
+      ...axiosOpts,
+      maxRedirects:    0,                          // we drive the redirect loop
+      validateStatus:  (s) => s >= 200 && s < 400, // accept 2xx + 3xx, throw on 4xx/5xx
+    });
+    if (response.status < 300) return response;
+    const loc = response.headers.location;
+    if (!loc) return response; // 3xx without Location — return as-is
+    currentUrl = new URL(loc, currentUrl).href;
+  }
+  const e = new Error('Too many redirects'); e.status = 502; throw e;
+}
+
 app.get('/api/proxy', async (req, res) => {
   const url = req.query.url || '';
   if (!url) return res.status(400).send('Missing url');
 
-  // Full guard: scheme + embed-host allowlist + DNS-rebinding-safe private IP
-  // check. Throws on any violation with { status, message }.
+  let response;
   try {
-    await assertSafeOutboundUrl(url);
-  } catch (e) {
-    return res.status(e.status || 403).send(e.message || 'Forbidden');
-  }
-
-  try {
-    const response = await axios.get(url, {
+    response = await safeProxyFetch(url, {
       headers: {
         ...PLAYER_HDRS,
         Referer: 'https://playeriframe.sbs/',
         Origin:  'https://playeriframe.sbs',
       },
-      responseType: 'arraybuffer',
-      timeout: 15000,
-      maxRedirects: 10,
+      responseType:     'arraybuffer',
+      timeout:          15000,
+      maxContentLength: PROXY_MAX_BODY,
+      maxBodyLength:    PROXY_MAX_BODY,
     });
+  } catch (e) {
+    return res.status(e.status || 502).send(e.message || 'Proxy error');
+  }
 
+  try {
     const ct = response.headers['content-type'] || 'text/html';
     res.set('Content-Type', ct);
     res.set('Access-Control-Allow-Origin', '*');

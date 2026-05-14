@@ -211,9 +211,12 @@ const Sync = {
     if (document.getElementById('sec-wishlist')?.classList.contains('active')) renderWishlist();
   },
 
-  // /pull is a GET (token in query, not body), so it doesn't fit _post.
+  // /pull is a GET; token goes in Authorization header (NOT the query string —
+  // query strings leak into access logs, browser history, and Referer headers).
   async _pull() {
-    const r = await fetch('/api/sync/pull?token=' + encodeURIComponent(Sync.token));
+    const r = await fetch('/api/sync/pull', {
+      headers: { Authorization: 'Bearer ' + Sync.token },
+    });
     if (!r.ok) {
       const e = new Error('Pull failed'); e.status = r.status; throw e;
     }
@@ -1183,12 +1186,23 @@ function loadPlayer(index) {
        </button>`
     : '';
 
+  // Proxied players come from our origin (`/api/proxy?...`), so without sandbox
+  // they'd be same-origin with this page and could read `parent.localStorage`
+  // (sync token, history) from any hostile script that survives our regex strip.
+  // Sandbox without `allow-same-origin` forces a unique opaque origin; the
+  // player still runs JS and can go fullscreen, but can't reach us.
+  // Direct cross-origin embeds (emturbovid.com etc.) are already isolated by SOP.
+  const sandboxAttr = p.proxied
+    ? 'sandbox="allow-scripts allow-presentation allow-popups allow-forms"'
+    : '';
+
   wrap.innerHTML = `<iframe
     id="player-iframe"
     src="${esc(playerUrl)}"
     allowfullscreen
     allow="autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write"
     referrerpolicy="no-referrer"
+    ${sandboxAttr}
   ></iframe>
   <button class="player-fullscreen-btn" id="player-fullscreen-btn"
           data-action="fullscreenPlayer" title="Fullscreen" style="display:flex">
