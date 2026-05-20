@@ -745,8 +745,10 @@ function renderContinueWatching(kind = 'movie') {
   // Every card here is watched by definition — hide the tick to avoid noise.
   // For series with a resume point, surface "S2 E5" so users know where they'll pick up.
   grid.innerHTML = items.map(m => {
-    const progressBadge = (m.kind === 'series' && m.lastSeason && m.lastEpisode)
-      ? `S${m.lastSeason} E${m.lastEpisode}`
+    const ls = parseInt(m.lastSeason, 10);
+    const le = parseInt(m.lastEpisode, 10);
+    const progressBadge = (m.kind === 'series' && ls > 0 && le > 0)
+      ? `S${ls} E${le}`
       : null;
     return cardHTML(m, { hideWatchedBadge: true, progressBadge });
   }).join('');
@@ -783,14 +785,17 @@ function cardHTML(m, opts = {}) {
   // For series in Recently Watched (opts.progressBadge), show resume point
   // ("S2 E5") instead of the static SEASONS/EPS count — tells the user where
   // they'll pick up at a glance.
+  // Numeric coercion + esc guards against poisoned sync payloads / scraped values
+  const totalSeasons  = parseInt(m.total_seasons, 10)  || 0;
+  const totalEpisodes = parseInt(m.total_episodes, 10) || 0;
   const seriesBadgeText = opts.progressBadge
-    || (m.total_seasons > 1
-      ? `${m.total_seasons} SEASONS`
-      : m.total_episodes
-        ? `EPS ${m.total_episodes}`
+    || (totalSeasons > 1
+      ? `${totalSeasons} SEASONS`
+      : totalEpisodes
+        ? `EPS ${totalEpisodes}`
         : 'SERIES');
   const kindBadge = kind === 'series'
-    ? `<span class="card-kind">${seriesBadgeText}</span>`
+    ? `<span class="card-kind">${esc(seriesBadgeText)}</span>`
     : '';
   const watchedBadge = (!opts.hideWatchedBadge && History.has(m.slug))
     ? '<span class="card-watched" title="Watched">&#10003;</span>' : '';
@@ -807,8 +812,8 @@ function cardHTML(m, opts = {}) {
   const placeholder = `<div class="card-img-placeholder" ${m.poster ? 'style="display:none"' : ''}>&#127916;</div>`;
   // Fallback: no poster → render badge directly on the card
   const looseBadge = !m.poster ? watchedBadge : '';
-  const stars = m.rating ? `<span class="card-rating">&#9733; ${m.rating}</span>` : '';
-  const year  = m.year   ? `<span class="card-year">${m.year}</span>` : '';
+  const stars = m.rating ? `<span class="card-rating">&#9733; ${esc(m.rating)}</span>` : '';
+  const year  = m.year   ? `<span class="card-year">${esc(m.year)}</span>` : '';
 
   let actions = '';
   if (opts.showDelete) {
@@ -1205,11 +1210,11 @@ function renderModal(data) {
   document.getElementById('modal-title').textContent = data.title || 'Unknown';
 
   const meta = [];
-  if (data.year)     meta.push(`<span class="pill">${data.year}</span>`);
-  if (data.rating)   meta.push(`<span class="pill rating">&#9733; ${data.rating}</span>`);
-  if (data.duration) meta.push(`<span class="pill">${formatDuration(data.duration)}</span>`);
-  if (data.genre)    data.genre.split(',').slice(0, 3).forEach(g =>
-    meta.push(`<span class="pill">${g.trim()}</span>`)
+  if (data.year)     meta.push(`<span class="pill">${esc(data.year)}</span>`);
+  if (data.rating)   meta.push(`<span class="pill rating">&#9733; ${esc(data.rating)}</span>`);
+  if (data.duration) meta.push(`<span class="pill">${esc(formatDuration(data.duration))}</span>`);
+  if (data.genre)    String(data.genre).split(',').slice(0, 3).forEach(g =>
+    meta.push(`<span class="pill">${esc(g.trim())}</span>`)
   );
   document.getElementById('modal-meta').innerHTML = meta.join('');
 
@@ -1495,9 +1500,13 @@ function esc(str) {
 }
 function emptyHTML(msg) { return `<div class="empty">${msg}</div>`; }
 function formatDuration(iso) {
-  const m = String(iso).match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
-  if (!m) return iso;
-  return ((m[1] ? m[1] + 'h ' : '') + (m[2] ? m[2] + 'm' : '')).trim() || iso;
+  const s = String(iso);
+  const m = s.match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
+  // Always return a controlled-shape string. Untrusted input falls back to s
+  // verbatim, and the call site is responsible for esc()-ing it before HTML
+  // interpolation.
+  if (!m) return s;
+  return ((m[1] ? m[1] + 'h ' : '') + (m[2] ? m[2] + 'm' : '')).trim() || s;
 }
 
 /* ---- Keyboard ---- */
